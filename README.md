@@ -12,7 +12,7 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 > [!CAUTION]
 > The use of A.C.A.S may violate the rules and lead to disqualification or banning from tournaments and online platforms. A.C.A.S is meant to be used as a real-time learning tool. Remember, struggling at chess doesn't mean you're unintelligent... it's not an IQ test, just a board game. And even IQ tests only measure certain aspects of your abilities. Use A.C.A.S fairly, be kind to other players.
 
-| [▶️ Open A.C.A.S](https://chessacas.vercel.app/) | [⬇️ Install (GreasyFork)](https://github.com/thanhbinh-ic/Chess.A.C.A.S)  | [💬 Discuss With Community](https://github.com/thanhbinh-ic/Chess.A.C.A.S/issues)
+| [▶️ Open A.C.A.S](https://chessacas.vercel.app/) | [⬇️ Install (Script)](https://chessacas.vercel.app/acas.user.js)  | [💬 Discuss With Community](https://github.com/thanhbinh-ic/Chess.A.C.A.S/issues)
 |-------|-------|-------|
 
 * Many built in WebAssembly engines (faster than JS)
