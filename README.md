@@ -12,7 +12,7 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 > [!CAUTION]
 > The use of A.C.A.S may violate the rules and lead to disqualification or banning from tournaments and online platforms. A.C.A.S is meant to be used as a real-time learning tool. Remember, struggling at chess doesn't mean you're unintelligent... it's not an IQ test, just a board game. And even IQ tests only measure certain aspects of your abilities. Use A.C.A.S fairly, be kind to other players.
 
-| [▶️ Open A.C.A.S](https://thanhbinh-ic.github.io/A.C.A.S-MOD/) | [⬇️ Install (GreasyFork)](https://github.com/thanhbinh-ic/A.C.A.S-MOD)  | [💬 Discuss With Community](https://github.com/thanhbinh-ic/A.C.A.S-MOD/issues)
+| [▶️ Open A.C.A.S](https://chessacas.vercel.app/) | [⬇️ Install (GreasyFork)](https://github.com/thanhbinh-ic/Chess.A.C.A.S)  | [💬 Discuss With Community](https://github.com/thanhbinh-ic/Chess.A.C.A.S/issues)
 |-------|-------|-------|
 
 * Many built in WebAssembly engines (faster than JS)
@@ -51,7 +51,7 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 | [onnxruntime-web](https://github.com/Microsoft/onnxruntime) | Run ML models in browser | MIT |
 | [Klaro!](https://github.com/klaro-org/klaro-js) | Cookie consent manager | BSD 3-Clause |
 | [SnapDOM](https://github.com/zumerlab/snapdom) | DOM → image screenshots | MIT |
-| [UniversalBoardDrawer](https://github.com/thanhbinh-ic/A.C.A.S-MOD) | Draw arrows on boards | GPL-3.0 |
+| [UniversalBoardDrawer](https://github.com/thanhbinh-ic/Chess.A.C.A.S) | Draw arrows on boards | GPL-3.0 |
 | [CommLink](https://github.com/AugmentedWeb/CommLink) | Cross-window communication | GPL-3.0 |
 | [Bootstrap Icons](https://getbootstrap.com/) | Icon set | MIT |
 | [Mona Sans](https://github.com/github/mona-sans) | Font (GitHub) | SIL Open Font License |
@@ -87,10 +87,10 @@ There might be more, please let us know if anything is missing, thank you!
 </tr>
 <tr>
 <td>The engine runs in a completely separate tab from the chess game, keeping it fully isolated from the game page. The chess website cannot block or interfere with A.C.A.S.</td>
-<td>A.C.A.S sends move data via <a href="https://github.com/AugmentedWeb/CommLink">CommLink</a>, while the userscript displays the data on the chessboard using <a href="https://github.com/thanhbinh-ic/A.C.A.S-MOD">UniversalBoardDrawer</a>. <i>This requires the "Display Moves On External Site" setting to be enabled.</i></td>
+<td>A.C.A.S sends move data via <a href="https://github.com/AugmentedWeb/CommLink">CommLink</a>, while the userscript displays the data on the chessboard using <a href="https://github.com/thanhbinh-ic/Chess.A.C.A.S">UniversalBoardDrawer</a>. <i>This requires the "Display Moves On External Site" setting to be enabled.</i></td>
 </tr>
 </table>
 
-If you're having issues, please visit the [troubleshoot](https://thanhbinh-ic.github.io/A.C.A.S-MOD/troubleshoot/) page. Developers can visit the [development](https://thanhbinh-ic.github.io/A.C.A.S-MOD/development/) page. Thank you!
+If you're having issues, please visit the [troubleshoot](https://chessacas.vercel.app/troubleshoot/) page. Developers can visit the [development](https://chessacas.vercel.app/development/) page. Thank you!
 
 <img width="1903" height="1676" alt="acas" src="https://github.com/user-attachments/assets/cbb510f0-5083-4a6b-9bd5-a7b91d390e68" />

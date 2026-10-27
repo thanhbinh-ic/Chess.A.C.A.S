@@ -1,6 +1,6 @@
 # Local Calculation Server (for A.C.A.S)
 
-Please visit the GitHub for more details: https://github.com/thanhbinh-ic/A.C.A.S-MOD
+Please visit the GitHub for more details: https://github.com/thanhbinh-ic/Chess.A.C.A.S
 
 This file basically just lists the LICENSE and the dependencies A.C.A.S might use.
 
@@ -33,7 +33,7 @@ This program hosts a local WebSocket server on your computer. While local server
 - [onnxruntime-web](https://github.com/Microsoft/onnxruntime) – used for Maia 2 engine implementation
 - [Klaro!](https://github.com/klaro-org/klaro-js) – for legal reasons, to ask user for cookie permission
 - [SnapDOM](https://github.com/zumerlab/snapdom) – for DOM screenshots (e.g. turning the board into image)
-- [UniversalBoardDrawer](https://github.com/thanhbinh-ic/A.C.A.S-MOD) – for drawing arrows on the GUI and the chess site chessboards
+- [UniversalBoardDrawer](https://github.com/thanhbinh-ic/Chess.A.C.A.S) – for drawing arrows on the GUI and the chess site chessboards
 - [CommLink](https://github.com/AugmentedWeb/CommLink) – for cross-window communication between the GUI tab and chess sites
 - [Bootstrap Icons](https://getbootstrap.com/) – for the icons
 - [Mona Sans](https://github.com/github/mona-sans) – GitHub's open-source variable font

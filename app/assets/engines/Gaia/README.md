@@ -1,10 +1,10 @@
-# Gaia 4.4.2 — A.C.A.S-MOD built-in (WASM)
+# Gaia 4.4.2 — Chess.A.C.A.S built-in (WASM)
 
 Source: GaiaChess 4.4.2 by Jean-François Romang, David Rabel, GPL-3.0-or-later,
 https://github.com/jromang/gaiachess
 
 Files in this folder:
-- `gaiaWorker.js` — A.C.A.S-MOD adapter (written for this fork, not part of Gaia's web bundle).
+- `gaiaWorker.js` — Chess.A.C.A.S adapter (written for this fork, not part of Gaia's web bundle).
 - `engine.mjs` — Gaia's web engine loader, as shipped in the web bundle.
 - `engine.wasm.b64` — Gaia's web engine, base64 text. The real binary is
   `engine.wasm`; it is also stored in base64 because this fork is pushed
