@@ -12,10 +12,10 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 > [!CAUTION]
 > The use of A.C.A.S may violate the rules and lead to disqualification or banning from tournaments and online platforms. A.C.A.S is meant to be used as a real-time learning tool. Remember, struggling at chess doesn't mean you're unintelligent... it's not an IQ test, just a board game. And even IQ tests only measure certain aspects of your abilities. Use A.C.A.S fairly, be kind to other players.
 
-| [▶️ Open A.C.A.S](https://chessacas.vercel.app/) | [⬇️ Install (Script)](https://chessacas.vercel.app/acas.user.js)  | [💬 Discuss With Community](https://github.com/thanhbinh-ic/Chess.A.C.A.S/issues)
-|-------|-------|-------|
+| [▶️ Open A.C.A.S](https://chessacas.vercel.app/) | [⬇️ Install (Script)](https://chessacas.vercel.app/acas.user.js)  | [💬 Discuss With Community](https://github.com/thanhbinh-ic/Chess.A.C.A.S/issues) | [🏠 Original Project](https://github.com/Psyyke/A.C.A.S/releases/tag/v1.1.0-beta-server)
+|-------|-------|-------|-------|
 
-* Many built in WebAssembly engines (faster than JS)
+* 3 built-in WebAssembly engines: Gaia 4.4.2, Maia 3, Fairy Stockfish 14 (see below)
 * External engines (via an installable localhost server)
 * Supports top chess sites (chess.com, lichess.org, etc.)
 * Multiple suggestions, arrows, variants, fonts
@@ -31,6 +31,19 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 * Translated into 30+ languages
 * No anti-features on userscript
 
+
+## What this fork changes vs. the original
+
+This fork is based on [Psyyke/A.C.A.S](https://github.com/Psyyke/A.C.A.S) (original server release linked above). The changes below are what this fork actually ships, not upstream features:
+
+* **Hosted on Vercel, not GitHub Pages.** The GUI lives at <https://chessacas.vercel.app/>, served from the repo root, so there is no `/A.C.A.S-MOD/` URL prefix and no hard-coded upstream host path. The userscript backend was switched to this host (`2.5.6-vercel`); a stored old backend URL is auto-reset on first run.
+* **Built-in engines trimmed from ~809 MB to ~154 MB.** Removed Stockfish, Lc0/Zerofish, Maia 2, Lozza, Fusion and the other bundled engines. Only three remain: **Gaia 4.4.2, Maia 3 and Fairy Stockfish 14** (plus the shared `chessjs` / `onnxruntime-web` libraries Maia 3 needs).
+* **Gaia 4.4.2 with a real NNUE.** Gaia runs with its NNUE network (`net.bin.deflate`, split into chunks for GitHub's file-size limit) and 3+4-piece tablebases, instead of falling back to the PeSTO evaluation. A dedicated ACAS worker adapter (`Gaia/gaiaWorker.js`) translates between ACAS and Gaia's UCI protocol.
+* **Fairy Stockfish fixed for any host.** Upstream `stockfish.js` hard-coded `_scriptDir` to `/A.C.A.S/...`, so Fairy 404'd on every fork. It is now a relative `./stockfish.js`, so the WASM and pthread worker load from the worker's own folder on Vercel, GitHub Pages or localhost.
+* **Floating Panel no longer uses Picture-in-Picture.** The suggestion panel opens in a normal popup window (`acas-floating-panel`), so it no longer steals the browser's single PiP slot (YouTube PiP keeps working). Added a Floating Panel Type setting (`window` / `pip`), a single floating window, auto-close when the app tab closes, and the Hidden settings panel is always shown.
+* **Move arrows no longer disappear.** Arrows are built before the old ones are cleared, with retries and a redraw on focus, so a packet arriving while another window is clicked can no longer lose the arrows until the next move.
+* **Local server accepts the Vercel origin.** `appServer/backend/server.js` allows `https://chessacas.vercel.app` (the old GitHub Pages origin is kept during the transition), so external engines still work from the Vercel GUI over `ws://localhost:2800`. The Hidden panel's ghost-mode and auto-move options are unchanged upstream features; this fork only makes that panel always available.
+
 <details>
   
 <summary>Used Libraries ❤️</summary>
@@ -38,16 +51,13 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 | Library | Description | License |
 |--------|------------|---------|
 | [Fairy Stockfish WASM](https://github.com/fairy-stockfish/fairy-stockfish.wasm) | Chess engine (variants) | GPL-3.0 |
-| [Stockfish WASM](https://github.com/nmrugg/stockfish.js/) | Chess engine (main engine) | GPL-3.0 |
-| [ZeroFish](https://github.com/schlawg/zerofish) | WASM port of Lc0 + Stockfish | GPL-3.0 |
-| [Maia-Chess](https://github.com/CSSLab/maia-chess) | Human-like NN weights | GPL-3.0 |
-| [Maia-Platform-Frontend](https://github.com/CSSLab/maia-platform-frontend) | Maia 2 engine source | MIT |
-| [Lozza](https://github.com/op12no2/lozza) | Additional chess engine | MIT |
-| [COI-Serviceworker](https://github.com/gzuidhof/coi-serviceworker) | Enables WASM on GitHub Pages | MIT |
+| [GaiaChess](https://github.com/jromang/gaiachess) | Built-in UCI engine with NNUE (Gaia 4.4.2) | GPL-3.0 |
+| [Maia-Chess](https://github.com/CSSLab/maia-chess) | Human-like NN weights (Maia 3) | GPL-3.0 |
+| [COI-Serviceworker](https://github.com/gzuidhof/coi-serviceworker) | Enables SharedArrayBuffer / WASM on static hosting (Vercel) | MIT |
 | [ChessgroundX](https://github.com/gbtami/chessgroundx) | Chessboard UI (modified) | GPL-3.0 |
 | [FileSaver](http://purl.eligrey.com/github/FileSaver.js) | Save config files | MIT |
 | [bodymovin (lottie-web)](https://github.com/airbnb/lottie-web) | SVG animations | MIT |
-| [chess.js](https://github.com/jhlywa/chess.js) | Game logic (Maia 2) | BSD-2-Clause |
+| [chess.js](https://github.com/jhlywa/chess.js) | Game logic (Maia 3) | BSD-2-Clause |
 | [onnxruntime-web](https://github.com/Microsoft/onnxruntime) | Run ML models in browser | MIT |
 | [Klaro!](https://github.com/klaro-org/klaro-js) | Cookie consent manager | BSD 3-Clause |
 | [SnapDOM](https://github.com/zumerlab/snapdom) | DOM → image screenshots | MIT |
