@@ -1,0 +1,124 @@
+import { saveSetting, removeSetting } from './settings.js';
+import { runSettingChangeObserver } from './settingChangeObserver.js';
+import { doesDropdownItemExist } from './domDropdown.js';
+import { initializeRangeInput } from './rangeInputs.js';
+
+export function setInputValue(elem, val, min, max) {
+    const isCheckbox = elem.type === 'checkbox';
+
+    // Migrate the display of legacy boolean values accidentally saved for UCI
+    // strings without changing genuine checkbox settings or persisting defaults.
+    if(elem.dataset.uciOptionType === 'string' && typeof val === 'boolean')
+        val = elem.dataset.defaultValue;
+
+    if(isCheckbox) {
+        elem.checked = VAR_TO_CORRECT_TYPE(val);
+    } else {
+        const key = elem?.dataset?.key;
+        const parentElem = elem?.parentElement;
+        const isDropdown = key && parentElem && parentElem.classList.contains('dropdown-input-container');
+
+        if(isDropdown) { // highlight dropdown selected item
+            const selectedItemKey = 'selected-list-item';
+            const dropdownElems = [...parentElem?.querySelectorAll('.dropdown-item')];
+
+            dropdownElems.forEach(elem => {
+                if(elem.dataset.value === val)
+                    elem.classList.add(selectedItemKey);
+                else
+                    elem.classList.remove(selectedItemKey);
+            });
+        } else {
+            if(min != null && max != null) {
+                const clamped = Math.max(min, Math.min(max, val));
+
+                val = Number.isNaN(clamped) ? min : clamped;
+            }
+        }
+
+        const preserveText = elem.dataset.uciOptionType === 'string' || elem.dataset.dynamicValueType === 'text';
+        elem.value = preserveText ? String(val ?? '') : VAR_TO_CORRECT_TYPE(val);
+    }
+
+    // Notify descriptions/highlights after both text and checkbox updates.
+    // This is not a change event: loading a value must not save it again.
+    elem.dispatchEvent(new Event('acas-value-set'));
+}
+
+export function getInputValue(elem) {
+    let value = elem.value;
+
+    if(elem.type === 'checkbox') {
+        value = elem.checked;
+    } else if(elem.getAttribute('additional-type') === 'dropdown') {
+        value = doesDropdownItemExist(elem, elem.value) ? elem.value : elem.dataset.defaultValue;
+    }
+
+    return (value !== undefined && value !== null) ? value : elem.dataset.defaultValue;
+}
+
+export function activateInputDefaultValue(elem) {
+    setInputValue(elem, elem.dataset.defaultValue);
+}
+
+export function initializeSettingInputElem(elem, skipDefaultValueSet) {
+    if(!elem) return;
+    if(elem.type === 'range') initializeRangeInput(elem);
+
+    let [min, max] = [null, null];
+
+    const defaultVal = VAR_TO_CORRECT_TYPE(elem.dataset.defaultValue);
+    // Native sliders enforce their own min/max/step; these are legacy text bounds.
+    const isRange = elem.type !== 'range' && (elem.dataset?.between || elem.dataset?.spin);
+
+    if(defaultVal && !skipDefaultValueSet) {
+        activateInputDefaultValue(elem);
+        
+        if(!elem.placeholder)
+            elem.placeholder = elem.dataset.defaultValue;
+    }
+
+    if(isRange) {
+        if(elem.dataset?.between) {
+            [min, max] = PARSE_MINMAX_FROM_STR(elem.dataset.between);
+
+            elem.style.width = `${(String(max).length + 0.6) * 10}px`;
+        } else {
+            elem.style.width = `${(String(defaultVal).length + 0.45) * 25}px`;
+        }
+    }
+
+    elem.oninput = e => runSettingChangeObserver(e.target);
+
+    elem.onchange = e => {
+        if(isRange && elem.dataset?.between) {
+            const clamped = Math.max(min, Math.min(max, e.target.value));
+
+            e.target.value = Number.isNaN(clamped) ? min : clamped;
+        }
+
+        if(e.target.value || e.target.checked || e.target.value === '') {
+            saveSetting(elem, true);
+
+            if(
+                e?.target?.dataset?.key === 'displayMovesOnExternalSite' ||
+                e?.target?.dataset?.key === 'renderOnExternalSite' ||
+                e?.target?.dataset?.key === 'movesOnDemand' ||
+                e?.target?.dataset?.key === 'isUserscriptGhost'
+            ) {
+                const msg = TRANS_OBJ?.refreshSiteNotification ?? 'Refresh the external site to see changes!';
+                toast.create('message', '👀', msg, 3000);
+            }
+
+            runSettingChangeObserver(e.target, 50);
+        } else {
+            removeSetting(elem);
+        }
+    }
+}
+
+export function initializeInputElems() {
+    document.querySelectorAll('input[type="range"]').forEach(initializeRangeInput);
+    [...document.querySelectorAll('input[data-key], textarea[data-key]')]
+        .forEach(elem => initializeSettingInputElem(elem));
+}

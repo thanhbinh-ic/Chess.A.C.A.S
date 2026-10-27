@@ -1,0 +1,1448 @@
+// If you modify these strings, modify them on the userscript as well
+const USERSCRIPT_SHARED_VARS = {
+    gmConfigKey: 'AcasConfig',
+    tempValueIndicator: '-temp-value-'
+};
+
+const ENGINES_REQUIRING_SAB = [ // Requiring SharedArrayBuffer
+    'stockfish-16-1-wasm', 
+    'stockfish-14-nnue',
+    'fairy-stockfish-nnue-wasm',
+    'lc0'
+];
+
+const PROFILE_STORAGE_KEY_PREFIX = '__B64__';
+const USER_USAGE_PREFIX = 'usageStat_';
+const MINUTES_USED_STORAGE_KEY = 'minutesUsed';
+const THEME_COLOR_STORAGE_KEY = 'themeColorHex';
+const INSTANCE_SIZE_KEY = 'instanceSize';
+const BOARD_SIZE_MODIFIER_KEY = 'boardSizeModifier';
+const CONCEAL_ASSISTANCE_ACTIVE_KEY = 'concealAssistanceActive';
+const CONCEAL_ASSISTANCE_DELAY_KEY = 'concealAssistanceAutoDelayMs';
+
+const TOS_ACCEPTED_DB_KEY = 'isTosAccepted';
+
+const GUI_BROADCAST_NAME = 'gui';
+const DYNAMIC_SETTINGS_STORAGE_KEY = 'dynamicSettings';
+const EXTERNAL_UCI_BROADCAST_NAME = 'externalEngineUciFeed';
+const EXTERNAL_STATUS_BROADCAST_NAME = 'externalEngineStatusFeed';
+const DYNAMIC_BUTTONPRESS_BROADCAST_NAME = 'dynamicSettingButtonFeed';
+
+// Allows for every script to quickly determine what profile it is, etc.
+const SETTING_FILTER_OBJ = { 'type': 'global', 'instanceID': null, 'profileID': null };
+
+const EE_ACTIVE_STORAGE_KEY = 'IS_EXTERNAL_ENGINE_SETTING_ACTIVE';
+// Top level in a plain script every other file depends on, so a corrupt value (or a
+// context where localStorage itself throws) took the whole app down before it rendered,
+// and it stayed down on every reload until storage was cleared by hand.
+const IS_EXTERNAL_ENGINE_SETTING_ACTIVE = (() => {
+    try {
+        return JSON.parse(localStorage.getItem(EE_ACTIVE_STORAGE_KEY) || "{}") ?? {};
+    } catch(e) {
+        console.warn('Could not read stored external engine state, starting fresh:', e?.message);
+        return {};
+    }
+})();
+
+const FI_NUMBER_FORMATTER = new Intl.NumberFormat('fi-FI');
+const ACTIVE_INPUT_LISTENERS = [];
+
+const POLY_OPENING_BOOKS = new Map();
+
+const USERSCRIPT_MIN_VERSION = '2.5.0';
+
+let TRANS_OBJ = null; // set by translationProcessor.js
+let FULL_TRANS_OBJ = null; // set by translationProcessor.js
+let IS_INSTANCE_SETTING_BTN_DISABLED = false;
+let LAST_FORCE_CLOSE_TIME = 0;
+let CONCEAL_ASSISTANCE_ACTIVE = null;
+let CONCEAL_TIMEOUT = null;
+
+function FORCE_CLOSE_ALL_INSTANCES() {
+    const now = Date.now();
+    
+    if(now - LAST_FORCE_CLOSE_TIME < 3000) return;
+    LAST_FORCE_CLOSE_TIME = now;
+
+    window.AcasInstances.forEach(iObj => {
+        if(iObj.instance && typeof iObj.instance.close === "function") {
+            iObj.instance.close();
+        }
+    });
+}
+
+function CREATE_BOARD_DRAWER_MOVE_OBJ(
+    elem = null,
+    move,
+    profileID = null,
+    category = null
+) {
+    return {
+        elem,
+
+        data: {
+            // Shape
+            shapeType: move.shapeType ?? null,
+            shapeSquare: move.shapeSquare ?? null,
+            shapeConfig: move.shapeConfig ?? null,
+
+            // Player move
+            from: move.from ?? move.player?.[0] ?? null,
+            to: move.to ?? move.player?.[1] ?? null,
+
+            // Opponent move
+            oppFrom: move.oppFrom ?? move.opponent?.[0] ?? null,
+            oppTo: move.oppTo ?? move.opponent?.[1] ?? null,
+
+            // Move metadata
+            playerPromotion: move.playerPromotion ?? null,
+            opponentPromotion: move.opponentPromotion ?? null,
+            cp: move.cp ?? null,
+            ranking: move.ranking ?? null,
+            isFuture: move.isFuture ?? null,
+            isOpponent: move.isOpponent ?? false,
+            forceHoverOnly: move.forceHoverOnly ?? false,
+            bringToFront: move.bringToFront ?? false,
+
+            // Identification
+            profileID,
+            category
+        }
+    };
+}
+
+function FORMAT_MOVE_OBJ_TO_EXTERNAL_SITE(moveObjs) {
+    if(!Array.isArray(moveObjs)) return [];
+
+    return moveObjs.map(x => x?.data ?? x);
+}
+
+function APPLY_ASSISTANCE_CONCEALMENT(isConcealed) {
+    // Concealed right at instance creation
+    if(CONCEAL_ASSISTANCE_ACTIVE === null && isConcealed)
+        toast.warning(TRANS_OBJ?.concealmentActive ?? 'Concealment active!', 5000);
+
+    CONCEAL_ASSISTANCE_ACTIVE = isConcealed;
+
+    window.AcasInstances.forEach(async iObj => {
+        if(iObj.instance && typeof iObj.instance.close === "function") {
+            await WAIT_UNTIL_VAR(() => iObj.instance.BoardDrawer?.boardContainerElem);
+            const BoardDrawerSvg = iObj.instance.BoardDrawer.boardContainerElem;
+            
+            if('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+            if(isConcealed) BoardDrawerSvg.style.display = 'none';
+            else {
+                BoardDrawerSvg.style.display = 'block';
+
+                Object.keys(iObj.instance.pV).forEach(profileName => {
+                    const pending = iObj.instance.pV[profileName]?.pendingMoveDisplay;
+                    if(Array.isArray(pending)) iObj.instance.displayMoves(...pending);
+                });
+            }
+
+            iObj.instance.CommLink.commands.applyAssistanceConcealment(isConcealed);
+        }
+    });
+
+    const chessboardComponents = document.querySelectorAll('.chessboard-components, .instance-feedback-container');
+
+    chessboardComponents.forEach(elem => {
+        elem.classList.toggle('assistance-concealment-active', isConcealed);
+    });
+
+    if(typeof REFRESH_PIP_DISPLAY === 'function') REFRESH_PIP_DISPLAY();
+
+    RUN_CONCEAL_ASSISTANCE_AUTO_DELAY();
+}
+
+async function RUN_CONCEAL_ASSISTANCE_AUTO_DELAY() {
+    const delay = await GET_GM_CFG_VALUE(CONCEAL_ASSISTANCE_DELAY_KEY, false, false);
+
+    if(delay && !CONCEAL_ASSISTANCE_ACTIVE) {
+        CONCEAL_TIMEOUT = setTimeout(() => {
+            SET_CONCEAL_ASSISTANCE(true);
+        }, delay);
+    }
+}
+
+async function SET_CONCEAL_ASSISTANCE(isConcealed) {
+    clearTimeout(CONCEAL_TIMEOUT);
+
+    const gmConfigKey = USERSCRIPT_SHARED_VARS.gmConfigKey;
+    const config = await USERSCRIPT.getValue(gmConfigKey);
+
+    config.global[CONCEAL_ASSISTANCE_ACTIVE_KEY] = isConcealed;
+
+    await USERSCRIPT.setValue(gmConfigKey, config);
+
+    APPLY_ASSISTANCE_CONCEALMENT(isConcealed);
+}
+
+async function TOGGLE_CONCEAL_ASSISTANCE() {
+    const gmConfigKey = USERSCRIPT_SHARED_VARS.gmConfigKey;
+    const config = await USERSCRIPT.getValue(gmConfigKey);
+
+    const currentState = config?.global?.[CONCEAL_ASSISTANCE_ACTIVE_KEY] ?? false;
+
+    return SET_CONCEAL_ASSISTANCE(!currentState);
+}
+
+function CREATE_INPUT_LISTENER(listenerType, targetValue, callback) {
+    if(typeof listenerType !== 'string' || typeof targetValue !== 'string' || !callback) return;
+    
+    const existingIndex = ACTIVE_INPUT_LISTENERS
+        .findIndex(l => l.listenerType === listenerType);
+
+    if(existingIndex !== -1) {
+        const existing = ACTIVE_INPUT_LISTENERS[existingIndex];
+        if(existing.targetValue === targetValue) return;
+        
+        existing.listeners.forEach(({ type, fn }) => document.removeEventListener(type, fn));
+        ACTIVE_INPUT_LISTENERS.splice(existingIndex, 1);
+    }
+
+    let holdTimer = null;
+    let lastTapTime = 0;
+    const dblTapThreshold = 300;
+    const listeners = [];
+
+    const addListener = (type, fn) => {
+        document.addEventListener(type, fn);
+        listeners.push({ type, fn });
+    };
+
+    addListener('keydown', (e) => {
+        if(!targetValue.startsWith("Interact") && e.code === targetValue)
+            callback(e);
+    });
+
+    const startPress = (e) => {
+        if(!targetValue.startsWith("Interact")) return;
+
+        const match = targetValue.match(/^InteractLongPress(\d+)$/);
+
+        if(match) holdTimer = setTimeout(() => {
+            callback(e);
+            holdTimer = null;
+        }, parseInt(match[1], 10) * 1000);
+
+        if(targetValue === "InteractDoubleClick" && e.type.startsWith("touch")) {
+            const now = performance.now();
+            if(now - lastTapTime < dblTapThreshold) {
+                callback(e);
+                lastTapTime = 0;
+            }
+            else lastTapTime = now;
+        }
+    };
+
+    const endPress = () => { if(holdTimer) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+    }};
+
+    addListener('mousedown', startPress);
+    addListener('mouseup', endPress);
+    addListener('touchstart', startPress);
+    addListener('touchend', endPress);
+    addListener('dblclick', (e) => {
+        if(targetValue === "InteractDoubleClick") callback(e);
+    });
+
+    ACTIVE_INPUT_LISTENERS.push({
+        listenerType,
+        targetValue,
+        callback,
+        listeners
+    });
+}
+
+function GET_EXTERNAL_PARAM_DB_KEY(engineId) {
+    return 'EXTERNAL_PARAMS_' + engineId;
+}
+
+function GEOGEBRA_DOT_COMMANDS(data) {
+    const { w, b } = data;
+
+    const arrToGeoList = arr => `{${arr.join(",")}}`;
+
+    const wList = arrToGeoList(w);
+    const bList  = arrToGeoList(b);
+
+    const wCmd =
+        `wPoints = Sequence((i, Element(${wList}, i)), i, 1, ${w.length})`;
+
+    const bCmd =
+        `bPoints = Sequence((i, Element(${bList}, i)), i, 1, ${b.length})`;
+
+    return { wCmd, bCmd };
+}
+
+function GET_UNIQUE_MOVES(moves) {
+    const seen = new Set();
+    const cleaned = new Array(moves.length);
+    let write = 0;
+    let removedCount = 0;
+  
+    for(let i = 0; i < moves.length; i++) {
+            const m = moves[i];
+
+            const key =
+                m.player[0] + ',' + m.player[1] + '|' +
+                m.opponent[0] + ',' + m.opponent[1] + '|' +
+                m.profile;
+
+            if(!seen.has(key)) {
+                seen.add(key);
+                cleaned[write++] = m;
+            } else {
+                removedCount++;
+            }
+    }
+  
+    cleaned.length = write;
+
+    return [cleaned, removedCount];
+}
+
+const CREATE_MOVE_OBJ = ({
+    playerMove = null,
+    opponentMove = null,
+    cp = 0,
+    profile = null,
+    ranking = 99
+}) => ({
+    player: [playerMove?.from ?? null, playerMove?.to ?? null],
+    opponent: [opponentMove?.from ?? null, opponentMove?.to ?? null],
+    playerPromotion: playerMove?.promotion ?? null,
+    opponentPromotion: opponentMove?.promotion ?? null,
+    cp,
+    profile,
+    ranking
+});
+
+function OBJECT_TO_STRING(obj) {
+    const parts = [];
+
+    for(const key in obj) {
+        if(obj.hasOwnProperty(key)) {
+            const value = obj[key];
+
+            if(Array.isArray(value)) {
+                const innerValues = value.map(item => OBJECT_TO_STRING(item)).join(', ');
+                parts.push(`${key}: ${innerValues}`);
+            } else if(typeof value === 'object' && value !== null) {
+                const innerObject = OBJECT_TO_STRING(value);
+                parts.push(`${key}: { ${innerObject} }`);
+            } else {
+                parts.push(`${key}: ${value}`);
+            }
+        }
+    }
+
+    return parts.join(', ');
+}
+
+async function SEND_WEBHOOK(data = {}) {
+    const instanceID = data.instanceId ?? SETTING_FILTER_OBJ.instanceID;
+    const profileID = data.profile ?? SETTING_FILTER_OBJ.profileID;
+
+    const getSetting = key =>
+        GET_GM_CFG_VALUE(key, instanceID, profileID);
+
+    const [
+        enabled,
+        url,
+        template,
+        includeBoard,
+        webhookAvatar
+    ] = await Promise.all([
+        getSetting('webhookEnabled'),
+        getSetting('webhookUrl'),
+        getSetting('webhookMessageTemplate'),
+        getSetting('webhookIncludeBoard'),
+        getSetting('webhookAvatar')
+    ]);
+
+    if(
+        !enabled ||
+        !/^https:\/\/discord(?:app)?\.com\/api\/webhooks\//i.test(url)
+    ) {
+        return false;
+    }
+
+    const variables = {
+        engine: 'A.C.A.S',
+        timestamp: new Date().toLocaleString(),
+        ...data,
+        profile: GET_HUMAN_READABLE_PROFILE_NAME(
+            data.profile ?? SETTING_FILTER_OBJ.profileID
+        )
+    };
+
+    const content = (template || '').replace(
+        /\{([a-zA-Z][a-zA-Z0-9_]*)\}/g,
+        (_, key) => variables[key] ?? ''
+    );
+
+    const embed = {
+        title: `Engine (${variables.engine})`,
+        description: content.slice(0, 4096) || undefined,
+        color: parseInt(
+            localStorage.getItem(THEME_COLOR_STORAGE_KEY)?.replace('#', ''),
+            16
+        ),
+        footer: {
+            text: `${variables.site || 'Hmm'} • ${variables.timestamp}`
+        }
+    };
+
+    const form = new FormData();
+
+    if(
+        includeBoard &&
+        typeof CAPTURE_BOARD_IMAGE === 'function'
+    ) {
+        const boardDataUrl =
+            await CAPTURE_BOARD_IMAGE(instanceID);
+
+        if(boardDataUrl) {
+            const blob = await fetch(boardDataUrl)
+                .then(response => response.blob());
+
+            form.append(
+                'files[0]',
+                blob,
+                'chess-board.png'
+            );
+
+            embed.image = {
+                url: 'attachment://chess-board.png'
+            };
+        }
+    }
+
+    form.append(
+        'payload_json',
+        JSON.stringify({
+            username: 'A.C.A.S',
+            avatar_url:
+                webhookAvatar ||
+                `${location.origin}/A.C.A.S-MOD/assets/images/logo-192.png`,
+            embeds: [embed]
+        })
+    );
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            body: form
+        });
+
+        if(!response.ok) {
+            console.warn(
+                `[SEND_WEBHOOK] Discord returned ${response.status}`
+            );
+
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        console.warn('[SEND_WEBHOOK] Failed:', error);
+        return false;
+    }
+}
+
+function REMOVE_PARAM_FROM_URL(paramName) {
+    const newParams = new URLSearchParams(window.location.search);
+    newParams.delete(paramName);
+
+    const newUrl = window.location.pathname + (newParams.toString() ? '?' + newParams.toString() : '');
+    window.history.replaceState({}, '', newUrl);
+}
+
+function SPEAK_TEXT(text, config = {}) {
+    const speechConfig = {
+        pitch: config.pitch || 1,   // [0, 2]
+        rate: config.rate || 1,     // [0.1, 10]
+        volume: config.volume || 1, // [0, 1]
+        voiceName: config.voiceName || undefined,
+        lang: config.lang || undefined,
+        preferLanguage: Boolean(config.preferLanguage),
+    };
+
+    // Preserve translated words, including accents and non-Latin scripts.
+    const cleanedText = String(text).replace(/[^\p{L}\p{M}\p{N}\s\u200C\u200D,.'’-]/gu, '');
+
+    if('speechSynthesis' in window) {
+        const synthesis = window.speechSynthesis;
+        const utterance = new SpeechSynthesisUtterance(cleanedText);
+
+        utterance.pitch = speechConfig.pitch;
+        utterance.rate = speechConfig.rate;
+        utterance.volume = speechConfig.volume;
+        if(speechConfig.lang) utterance.lang = speechConfig.lang;
+
+        const voices = synthesis.getVoices();
+        let selectedVoice = voices.find(voice => voice.name === speechConfig.voiceName);
+        if(speechConfig.voiceName && !selectedVoice && !speechConfig.preferLanguage) {
+            toast.error(TRANS_OBJ?.ttsVoiceNotFound ?? 'TTS voice not found!');
+            return;
+        }
+        if(speechConfig.lang) {
+            const language = speechConfig.lang.toLowerCase().replace(/_/g, '-');
+            const languageFamily = language.split('-')[0];
+            const voiceLanguage = voice => voice.lang.toLowerCase().replace(/_/g, '-');
+            // A previously selected English voice must not override translated audio.
+            if(!selectedVoice || (speechConfig.preferLanguage
+                && voiceLanguage(selectedVoice).split('-')[0] !== languageFamily)) {
+                selectedVoice = voices.find(voice => voiceLanguage(voice) === language)
+                    || voices.find(voice => voiceLanguage(voice).split('-')[0] === languageFamily);
+            }
+        }
+        // If no matching voice is installed, let the browser resolve utterance.lang.
+        if(selectedVoice) utterance.voice = selectedVoice;
+
+        synthesis.speak(utterance);
+        return synthesis;
+    } else {
+        toast.error(TRANS_OBJ?.webSpeechUnsupported ?? 'Web Speech API is not supported in this browser!');
+    }
+}
+
+function GET_TTS_VOICES() {
+    if('speechSynthesis' in window) {
+        const synthesis = window.speechSynthesis;
+        const voices = synthesis.getVoices();
+
+        const voiceNames = voices.map(voice => voice.name);
+
+        return voiceNames;
+    } else return false;
+}
+
+function GET_SKILL_FROM_ELO(elo) {
+    if(elo <= 500) {
+        return -20;
+    } else if(elo >= 2900) {
+        return 20;
+    } else if(elo >= 2850) {
+        return 19;
+    } else {
+        const range = (elo - 500) / (2850 - 500);
+
+        return Math.round(-20 + (range * (19 - -20)));
+    }
+}
+
+// maybe should start using math to calculate it... oh well
+function GET_DEPTH_FROM_ELO(elo) {
+    return elo >= 3100 ? 18
+    : elo >= 3000 ? 16
+    : elo >= 2900 ? 14
+    : elo >= 2800 ? 12
+    : elo >= 2700 ? 10
+    : elo >= 2600 ? 8
+    : elo >= 2400 ? 7
+    : elo >= 2200 ? 6
+    : elo >= 2000 ? 5
+    : elo >= 1800 ? 4
+    : elo >= 1600 ? 3
+    : elo >= 1400 ? 2
+    : elo >= 1200 ? 1
+    : 1;
+}
+
+function GET_BASIC_FEN_LOWERCASED(fenStr) {
+    return fenStr
+        ?.replace(/\[.*?\]/g, '') // remove [] (and anything between) 
+        ?.split(' ')?.[0]
+        ?.toLowerCase();
+}
+
+function GET_BOARD_DIMENSIONS_FROM_FEN(fenStr) {
+    try {
+        const formattedFen = GET_BASIC_FEN_LOWERCASED(fenStr);
+        const extendedFen = formattedFen.replace(/\d+/g, (match) => ' '.repeat(Number(match)));
+    
+        const files = extendedFen.split('/');
+        const rank = files[0];
+    
+        const numRanks = rank.length;
+        const numFiles = files.length;
+      
+        return [numRanks, numFiles];
+    } catch(e) {
+        return [8, 8];
+    }
+}
+
+function GET_PGN_FROM_STATE_HISTORY(gameStateHistory) {
+    const chess = new Chess();
+
+    for(const state of gameStateHistory) {
+        const change = state.boardChanges;
+        const promotionPiece = change.promotionPiece;
+
+        if(!change?.from || !change?.to) continue;
+
+        chess.move({
+            from: change.from,
+            to: change.to,
+            ...(promotionPiece && {
+                promotion: promotionPiece.toLowerCase()
+            })
+        });
+    }
+
+    return chess.pgn();
+}
+
+async function GET_STATE_HISTORY(id) {
+    const getter = USERSCRIPT?.instanceVars?.gameStateHistory?.get;
+
+    if(typeof getter !== 'function') {
+        return [];
+    }
+
+    return await getter(id) || [];
+}
+
+function GENERATE_HISTORY_STR(gameStateHistory) {
+    if(!gameStateHistory?.length) return '-';
+
+    return gameStateHistory
+        .slice()
+        .map(gameState => {
+            const fen = gameState.fen?.full;
+
+            if(!fen) return null;
+
+            return fen.replaceAll(' ', '#');
+        })
+        .filter(Boolean)
+        .join(',');
+}
+
+function WAIT_UNTIL_VAR(fn, timeout = 100000, interval = 100) {
+    if(fn()) return fn();
+
+    return new Promise((resolve, reject) => {
+        const start = Date.now();
+        const timer = setInterval(() => {
+            if(fn()) {
+                clearInterval(timer);
+                resolve(fn());
+            } else if(Date.now() - start >= timeout) {
+                clearInterval(timer);
+                reject(new Error("timeout"));
+            }
+        }, interval);
+    });
+}
+
+function VAR_TO_CORRECT_TYPE(data) {
+    if(typeof data === 'string') {
+        if(data === 'NaN' || data.trim() === '') return '';
+
+        if(!isNaN(data)) {
+            return parseFloat(data);
+        }
+        
+        const lowerData = data.toLowerCase();
+
+        if(lowerData === 'true' || lowerData === 'false') {
+            return lowerData === 'true';
+        }
+    }
+    
+    return data;
+}
+
+function PARSE_MINMAX_FROM_STR(input) {
+    if(typeof input === 'number') return [input, input];
+
+    const parts = input.toString().split(/(?<=\d)-(?=-?\d)/);
+
+    const min = VAR_TO_CORRECT_TYPE(parts[0]);
+    const max = parts[1] !== undefined ? VAR_TO_CORRECT_TYPE(parts[1]) : min;
+
+    return [min, max];
+}
+
+function COUNT_PIECES_FROM_FEN(fen) {
+    const pieceCount = {};
+    const position = fen.split(' ')[0];
+
+    for(let char of position) {
+        if(/[rnbqkpRNBQKP]/.test(char)) {
+            pieceCount[char] = (pieceCount[char] || 0) + 1;
+        }
+    }
+    
+    return pieceCount;
+}
+
+function COUNT_TOTAL_PIECES_FROM_FEN(fen) {
+    let pieceCount = 0;
+    const position = fen.split(' ')[0];
+
+    for(let char of position) {
+        if(/[rnbqkpRNBQKP]/.test(char)) {
+            pieceCount++;
+        }
+    }
+
+    return pieceCount;
+}
+
+function FEN_TO_ARRAYS(fen) {
+    const rows = fen.split('/');
+    const board = [];
+
+    for(let row of rows) {
+        const boardRow = [];
+
+        // Match digit runs, not single digits, so wide boards ("10" empty squares) don't collapse
+        for(const token of row.match(/\d+|\D/g) ?? []) {
+            if(isNaN(token)) {
+                boardRow.push(token);
+            } else {
+                boardRow.push(...Array(parseInt(token, 10)).fill(''));
+            }
+        }
+
+        board.push(boardRow);
+    }
+
+    return board;
+}
+
+function IS_PLAYER_ATTACKING_KING(currentFen, turn) {
+    if(!currentFen) return false;
+
+    const boardPart = currentFen.split(' ')[0];
+    const rows = boardPart.split('/');
+    const board = [];
+
+    // Variant boards are not always 8x8, so follow the FEN instead of assuming
+    for(const rowString of rows) {
+        const row = [];
+
+        for(const token of rowString.match(/\d+|\D/g) ?? []) {
+            if(isNaN(token)) {
+                row.push(token);
+            } else {
+                for(let j = 0; j < parseInt(token, 10); j++) row.push(1);
+            }
+        }
+
+        board.push(row);
+    }
+
+    const isWhiteAttacking = turn === 'w';
+    const enemyKing = isWhiteAttacking ? 'k' : 'K';
+
+    const boardHeight = board.length;
+    const boardWidth = board.reduce((max, row) => Math.max(max, row.length), 0);
+
+    let kX = -1, kY = -1;
+
+    for(let y = 0; y < boardHeight; y++) {
+        for(let x = 0; x < board[y].length; x++) {
+            if(board[y][x] === enemyKing) { kX = x; kY = y; break; }
+        }
+        if(kX !== -1) break;
+    }
+
+    if(kX === -1) return false;
+
+    const atk = isWhiteAttacking
+        ? { p: 'P', n: 'N', b: 'B', r: 'R', q: 'Q' }
+        : { p: 'p', n: 'n', b: 'b', r: 'r', q: 'q' };
+
+    const kn = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+
+    for(let i = 0; i < kn.length; i++) {
+        const p = board[kY + kn[i][1]]?.[kX + kn[i][0]];
+        if(p === atk.n) return true;
+    }
+
+    const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
+    const maxRayLength = Math.max(boardWidth, boardHeight);
+
+    for(let i = 0; i < dirs.length; i++) {
+        const dx = dirs[i][0], dy = dirs[i][1];
+        const isDiagonal = i > 3;
+
+        for(let j = 1; j < maxRayLength; j++) {
+            const x = kX + dx * j, y = kY + dy * j;
+            const p = board[y]?.[x];
+            if(p === undefined) break;
+            if(p !== 1) {
+                if(p === atk.q || (isDiagonal ? p === atk.b : p === atk.r)) return true;
+                break;
+            }
+        }
+    }
+
+    const pY = kY + (isWhiteAttacking ? 1 : -1);
+
+    if(board[pY]?.[kX - 1] === atk.p || board[pY]?.[kX + 1] === atk.p) return true;
+
+    return false;
+}
+
+async function GET_PROFILE(profileName) {
+    return GET_PROFILE_FOR_INSTANCE(profileName, SETTING_FILTER_OBJ.instanceID);
+}
+
+async function GET_PROFILE_FOR_INSTANCE(profileName, instanceID) {
+    const gmConfigKey = USERSCRIPT_SHARED_VARS.gmConfigKey;
+    const config = await USERSCRIPT.getValue(gmConfigKey);
+
+    const profileKey = GET_PROFILE_STORAGE_KEY(profileName);
+
+    let profile = { 'name': profileName, 'config': null };
+
+    const instanceProfileObj = config?.instance?.[instanceID]?.['profiles']?.[profileKey];
+    const globalProfileObj = config?.['global']?.['profiles']?.[profileKey];
+
+    if(!instanceProfileObj && !globalProfileObj) {
+        return false;
+    }
+
+    profile.config = { ...config?.global, ...config?.instance?.[instanceID], ...globalProfileObj, ...instanceProfileObj };
+    delete profile.config.profiles;
+    profile.config[DYNAMIC_SETTINGS_STORAGE_KEY] = {
+        ...globalProfileObj?.[DYNAMIC_SETTINGS_STORAGE_KEY],
+        ...instanceProfileObj?.[DYNAMIC_SETTINGS_STORAGE_KEY]
+    };
+
+    for(const [key, curve] of Object.entries(profile.config?.[DYNAMIC_SETTINGS_STORAGE_KEY] ?? {})) {
+        const baseValue = profile.config[key];
+        const resolved = (typeof AppDynamicSettingsCore === 'undefined' ? DynamicSettingsCore : AppDynamicSettingsCore).resolveValue(
+            baseValue,
+            curve,
+            DynamicSettingsCore?.getContext(instanceID)
+        );
+        if(baseValue !== undefined && resolved !== undefined) profile.config[key] = resolved;
+    }
+
+    return profile;
+}
+
+async function GET_PROFILE_NAMES(instanceID = SETTING_FILTER_OBJ.instanceID) {
+    const gmConfigKey = USERSCRIPT_SHARED_VARS.gmConfigKey;
+    const config = await USERSCRIPT.getValue(gmConfigKey);
+
+    const globalProfilesObj = config?.global?.profiles;
+    const instanceProfilesObj = instanceID ? config?.instance?.[instanceID]?.profiles : null;
+    if(globalProfilesObj || instanceProfilesObj)
+        return [...new Set([...Object.keys(globalProfilesObj ?? {}), ...Object.keys(instanceProfilesObj ?? {})])];
+
+    console.error('Could not find profile names!', { ...SETTING_FILTER_OBJ, gmConfigKey, config });
+
+    return false;
+}
+
+async function GET_PROFILES(instanceID = SETTING_FILTER_OBJ.instanceID) {
+    const profileNameArr = await GET_PROFILE_NAMES(instanceID);
+
+    if(!profileNameArr) {
+        console.error('GET_PROFILES() failed, did not find any profile names!');
+
+        return [];
+    }
+
+    const profileArr = await Promise.all(profileNameArr.map(profileName =>
+        GET_PROFILE_FOR_INSTANCE(GET_HUMAN_READABLE_PROFILE_NAME(profileName), instanceID)
+    ));
+
+    return profileArr;
+}
+
+async function GET_ACTIVE_ENGINE_NAME(profileName) {
+    const usesExternalEngine = await GET_GM_CFG_VALUE('useExternalChessEngine', SETTING_FILTER_OBJ.instanceID, profileName);
+    const chessEngineName = await GET_GM_CFG_VALUE('chessEngine', SETTING_FILTER_OBJ.instanceID, profileName);
+    const externalChessEngineId = await GET_GM_CFG_VALUE('externalChessEngine', SETTING_FILTER_OBJ.instanceID, profileName);
+
+    const name = String(usesExternalEngine ? externalChessEngineId : chessEngineName);
+
+    return name.trim().replace(/\s+/g, '-');
+}
+
+async function GET_GM_CFG_VALUE(key, instanceID, profileID) {
+    if(profileID === null) return null;
+    if(typeof profileID === 'object') {
+        profileID = profileID.name;
+    }
+
+    const gmConfigKey = USERSCRIPT_SHARED_VARS.gmConfigKey;
+    const config = await USERSCRIPT.getValue(gmConfigKey);
+    const profileKey = profileID ? GET_PROFILE_STORAGE_KEY(profileID) : null;
+    const globalProfile = profileKey ? config?.global?.profiles?.[profileKey] : null;
+    const instanceProfile = profileKey ? config?.instance?.[instanceID]?.profiles?.[profileKey] : null;
+    const source = instanceProfile?.[key] !== undefined ? instanceProfile
+        : globalProfile?.[key] !== undefined ? globalProfile
+        : config?.instance?.[instanceID]?.[key] !== undefined ? config.instance[instanceID]
+        : config?.global;
+    const value = source?.[key];
+    if(value === undefined) return null;
+
+    const curve = instanceProfile?.[DYNAMIC_SETTINGS_STORAGE_KEY]?.[key]
+        ?? globalProfile?.[DYNAMIC_SETTINGS_STORAGE_KEY]?.[key];
+    if(curve && curve.enabled) {
+        return (typeof AppDynamicSettingsCore === 'undefined' ? DynamicSettingsCore : AppDynamicSettingsCore).resolveValue(
+            value,
+            curve,
+            DynamicSettingsCore?.getContext(instanceID)
+        ) ?? value;
+    }
+    return value;
+}
+
+async function GET_GM_CFG_BASE_VALUE(key, instanceID, profileID) {
+    if(profileID === null) return null;
+    if(typeof profileID === 'object') profileID = profileID.name;
+    const config = await USERSCRIPT.getValue(USERSCRIPT_SHARED_VARS.gmConfigKey);
+    const profileKey = profileID ? GET_PROFILE_STORAGE_KEY(profileID) : null;
+    const instanceProfile = profileKey ? config?.instance?.[instanceID]?.profiles?.[profileKey] : null;
+    const globalProfile = profileKey ? config?.global?.profiles?.[profileKey] : null;
+    if(instanceProfile?.[key] !== undefined) return instanceProfile[key];
+    if(globalProfile?.[key] !== undefined) return globalProfile[key];
+    if(config?.instance?.[instanceID]?.[key] !== undefined) return config.instance[instanceID][key];
+    return config?.global?.[key] ?? null;
+}
+
+async function GET_GM_DYNAMIC_CURVE(key, instanceID, profileID) {
+    if(typeof profileID === 'object') profileID = profileID.name;
+    const config = await USERSCRIPT.getValue(USERSCRIPT_SHARED_VARS.gmConfigKey);
+    const profileKey = profileID ? GET_PROFILE_STORAGE_KEY(profileID) : null;
+    const instanceCurve = profileKey
+        ? config?.instance?.[instanceID]?.profiles?.[profileKey]?.[DYNAMIC_SETTINGS_STORAGE_KEY]?.[key]
+        : null;
+    return instanceCurve !== undefined
+        ? instanceCurve
+        : profileKey ? config?.global?.profiles?.[profileKey]?.[DYNAMIC_SETTINGS_STORAGE_KEY]?.[key] ?? null : null;
+}
+
+async function GET_GM_VALUES_STARTS_WITH(prefix, instanceID, profileID) {
+    if(typeof profileID === 'object') {
+        profileID = profileID.name;
+    }
+
+    const gmConfigKey = USERSCRIPT_SHARED_VARS.gmConfigKey;
+    const config = await USERSCRIPT.getValue(gmConfigKey);
+
+    const result = {};
+
+    function collectMatching(obj) {
+        if(!obj) return;
+        for(const k in obj) {
+            if(k.startsWith(prefix) && k !== DYNAMIC_SETTINGS_STORAGE_KEY && obj[k] !== undefined) {
+                result[k] = obj[k];
+            }
+        }
+    }
+
+    if(profileID) {
+        const profileKey = GET_PROFILE_STORAGE_KEY(profileID);
+
+        const globalProfile = config?.global?.['profiles']?.[profileKey];
+        const instanceProfile = config?.instance?.[instanceID]?.['profiles']?.[profileKey];
+
+        collectMatching(globalProfile);
+        collectMatching(instanceProfile);
+    }
+
+    const instanceObj = config?.instance?.[instanceID];
+    const globalObj = config?.global;
+
+    collectMatching(globalObj);
+    collectMatching(instanceObj);
+
+    for(const key of Object.keys(result)) {
+        result[key] = await GET_GM_CFG_VALUE(key, instanceID, profileID);
+    }
+
+    return Object.keys(result).length ? result : null;
+}
+
+function ADD_STYLES_TO_DOC(styles, id) {
+    const cssById = document.querySelector(`#${id}`);
+
+    const css = cssById ? cssById : document.createElement('style');
+    css.type = 'text/css';
+
+    if(id && !css?.id) css.id = id;
+
+    if(css.styleSheet) {
+        css.styleSheet.cssText = styles;
+    } else {
+        css.innerHTML = '';
+
+        css.appendChild(document.createTextNode(styles));
+    }
+
+    document.querySelector('head')?.appendChild(css);
+}
+
+function CALC_TIME_PROGRESS(startTime, movetime) {
+    let progress = (Date.now() - startTime) / movetime;
+    return Math.max(0, Math.min(1, progress));
+}
+
+function REVERSE_FEN_TURN(fen) {
+    const parts = fen.split(' ');
+
+    parts[1] = parts[1] === 'w' ? 'b' : 'w';
+    // Reset en-passant field (tied to the move that just happened, reversing turn makes the history inconsistent)
+    parts[3] = '-';
+
+    return parts.join(' ');
+}
+
+function PARSE_UCI_OPTION(line) {
+    if(typeof line !== 'string') return null;
+
+    const prefix = 'option name ';
+
+    if(line.startsWith(prefix)) {
+        line = line.slice(prefix.length);
+    }
+
+    if(line.length > 10000) {
+        throw new Error("UCI option line too long");
+    }
+
+    const tokens = line.trim().split(/\s+/);
+
+    if(tokens.length === 0) return null;
+
+    let i = 0;
+    const nameParts = [];
+
+    while(i < tokens.length && tokens[i] !== 'type') {
+        nameParts.push(tokens[i]);
+        i++;
+
+        if(nameParts.length > 100) {
+            throw new Error("UCI option name too long");
+        }
+    }
+
+    if(i >= tokens.length) {
+        return null;
+    }
+
+    const name = nameParts.join(' ');
+    i++; // skip "type"
+
+    if(i >= tokens.length) return null;
+    const type = tokens[i++];
+
+    let def;
+    let min;
+    let max;
+    let vars;
+    const fields = new Set(['default', 'min', 'max', 'var']);
+    const readText = () => {
+        const parts = [];
+        while(i < tokens.length && !fields.has(tokens[i])) parts.push(tokens[i++]);
+        return parts.join(' ');
+    };
+
+    while(i < tokens.length) {
+        const t = tokens[i++];
+
+        if(t === 'default') {
+            def = readText();
+        } 
+        else if(t === 'min' && i < tokens.length) {
+            const v = Number(tokens[i++]);
+            if(!Number.isNaN(v)) min = v;
+        } 
+        else if(t === 'max' && i < tokens.length) {
+            const v = Number(tokens[i++]);
+            if(!Number.isNaN(v)) max = v;
+        } 
+        else if(t === 'var') {
+            if(!vars) vars = [];
+            const value = readText();
+            if(vars.length < 1000) { // prevent unlimited growth
+                vars.push(value);
+            }
+        }
+    }
+
+    if(type === 'check' && def === '<empty>') def = false;
+    if(type === 'string' && def === '<empty>') def = '';
+    if(type !== 'check' && (def === undefined || def === null)) def = '';
+
+    return {
+        'name': name,
+        'type': type,
+        'def': type === 'combo' || type === 'string' ? def : VAR_TO_CORRECT_TYPE(def),
+        'min': VAR_TO_CORRECT_TYPE(min),
+        'max': VAR_TO_CORRECT_TYPE(max),
+        'vars': vars
+    };
+}
+
+function PARSE_UCI_RESPONSE(response) {
+    const keywords = [
+        'id', 'name', 'author', 'uciok', 'readyok',
+        'bestmove', 'option', 'info', 'score', 'pv', 'mate', 'cp',
+        'wdl', 'depth', 'seldepth', 'nodes', 'time', 'nps', 'tbhits',
+        'currmove', 'currmovenumber', 'hashfull', 'multipv', 'prob',
+        'refutation', 'line', 'stop', 'ponderhit', 'ucs', 'baseTurn',
+        'position', 'startpos', 'moves', 'files', 'ranks',
+        'pocket', 'template', 'variant', 'ponder', 'Fen:', 'bmc', 'error'
+    ];
+
+    keywords.push(...keywords.map(k => k + 'San'));
+
+    const data = {};
+    let currentKeyword = null;
+
+    response.trim().split(/\s+/).forEach(token => {
+        if(keywords.includes(token) || token.startsWith('info')) {
+            if(token.startsWith('info')) {
+                return;
+            }
+
+            currentKeyword = token;
+
+            data[currentKeyword] = currentKeyword === 'wdl' ? [] : '';
+
+        } else if(currentKeyword !== null) {
+            const number = Number(token);
+
+            if(currentKeyword === 'wdl') {
+                if(Number.isFinite(number)) {
+                    data[currentKeyword].push(number);
+                }
+            } else if(['bestmove', 'ponder', 'pv', 'currmove'].includes(currentKeyword)) {
+                // Moves are strings, including the UCI null move "0000".
+                data[currentKeyword] += (data[currentKeyword] ? ' ' : '') + token;
+            } else if(token !== '' && Number.isFinite(number)) {
+                data[currentKeyword] = number;
+            } else if(data[currentKeyword] !== '') {
+                data[currentKeyword] += ' ' + token;
+            } else {
+                data[currentKeyword] = token;
+            }
+        }
+    });
+
+    return data;
+}
+
+function EXTRACT_VARIANT_NAMES(str) {
+    const regex = /var\s+([\w-]+)/g;
+    const matches = str.match(regex);
+
+    if(matches) {
+        return matches.map(match => match.split(' ')[1]);
+    }
+
+    return [];
+}
+
+const IS_VARIANT_960 = v => v?.toLowerCase() === 'chess960';
+
+function FORMAT_VARIANT(str) {
+    return str
+        ?.replaceAll(' ', '')
+        ?.replaceAll('-', '')
+        ?.toLowerCase();
+}
+
+function FORMAT_CHESS_FONT(str) {
+    return str
+        ?.replaceAll(' ', '')
+        ?.toLowerCase();
+}
+
+function GET_BOARD_DIMENSION_PERCENTAGES(boardDimensionsObj) {
+    const { width, height } = boardDimensionsObj;
+    const isSquare = width === height;
+
+    if(isSquare) {
+        return { 'width': 100, 'height': 100 };
+    }
+
+    const newWidth = width/height * 100;
+    const newHeight = height/width * 100;
+
+    return width > height 
+        ? { 'width': 100, 'height': newHeight }
+        : { 'width': newWidth, 'height': 100 };
+}
+
+function GET_BOARD_HEIGHT_FROM_WIDTH(widthPx, boardDimensionsObj) {
+    return widthPx * (boardDimensionsObj.height / boardDimensionsObj.width);
+}
+
+function GET_PIECE_STYLE_DIMENSIONS(boardDimensionsObj) {
+    const width = 100 / boardDimensionsObj.width;
+    const height = 100 / boardDimensionsObj.height;
+
+    return { width, height };
+}
+
+function GET_BACKGROUND_STYLE_DIMENSION(boardDimensionsObj) {
+    return (100 / boardDimensionsObj.width) / (100 / 8) * 100;
+}
+
+function START_HEARTBEAT_LOOP(key) {
+    if(USERSCRIPT) {
+        return setInterval(() => {
+            USERSCRIPT.GM_setValue(key, true);
+        }, 1);
+    } else {
+        console.error("USERSCRIPT variable not found, can't start heart beat loop!");
+    }
+}
+
+function SET_INTERVAL_ASYNC(callback, interval) {
+    let running = true;
+
+    async function loop() {
+        while(running) {
+            try {
+                await new Promise((resolve) => setTimeout(resolve, interval));
+                await callback();
+            } catch (e) {
+                continue;
+            }
+        }
+    };
+
+    loop();
+
+    return { stop: () => running = false };
+}
+
+function GET_COOKIE(name) {
+    const cookies = document.cookie ? document.cookie.split('; ') : [];
+    for(let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].split('=');
+        if(cookie[0] === name) return decodeURIComponent(cookie.slice(1).join('='));
+    }
+    return null;
+}
+
+async function WAIT_FOR_ELEMENT(selector, maxWaitTime = 10000000) {
+    const startTime = Date.now();
+    while(Date.now() - startTime < maxWaitTime) {
+        const element = document.querySelector(selector);
+        if(element) {
+            return element;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms before checking again
+    }
+    console.warn(`Element ${selector} not found after ${maxWaitTime / 1000} seconds`);
+    return null;
+}
+
+async function LOAD_FILE_AS_UINT8_ARRAY(url) {
+    try {
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+        return new Uint8Array(buffer);
+    } catch (error) {
+        console.error("Error loading file:", error);
+        return null;
+    }
+}
+
+function GET_NICE_PATH(path, limit = 60) {
+    if(!path) return path;
+
+    const lastSeparatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    let dirPath = lastSeparatorIndex === -1 ? path : path.substring(0, lastSeparatorIndex);
+
+    if(dirPath.length <= limit) {
+        return dirPath;
+    }
+
+    const truncated = dirPath.slice(-limit);
+    const firstSeparatorIndex = truncated.search(/[/\\]/);
+
+    if(firstSeparatorIndex !== -1 && firstSeparatorIndex < limit - 5) {
+        return '...' + truncated.substring(firstSeparatorIndex);
+    }
+
+    return '...' + truncated;
+}
+
+function IS_BELOW_VERSION(versionStr, targetVersion) {
+    return versionStr.localeCompare(targetVersion, undefined, {numeric: true}) === -1;
+}
+
+function FORMAT_PROFILE_NAME(profileNameStr) {
+    return profileNameStr
+        .trim()
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .replace(/\s+/g, '');
+}
+
+function IS_BASE64_PROFILE_NAME(value) {
+    return typeof value === 'string'
+        && value.length > 0
+        && value.length % 4 === 0
+        && /^[A-Za-z0-9+/]+={0,2}$/.test(value);
+}
+
+function BASE64_ENCODE_UNICODE(value) {
+    const utf8 = new TextEncoder().encode(String(value));
+    let binary = '';
+
+    for(const byte of utf8) {
+        binary += String.fromCharCode(byte);
+    }
+
+    return btoa(binary);
+}
+
+function BASE64_DECODE_UNICODE(value) {
+    const binary = atob(value);
+    const bytes = new Uint8Array([...binary].map(char => char.charCodeAt(0)));
+    return new TextDecoder().decode(bytes);
+}
+
+function GET_HUMAN_READABLE_PROFILE_NAME(profileName) {
+    if(typeof profileName !== 'string' || !profileName) return profileName;
+    if(profileName === 'default') return 'default';
+    if(!profileName.startsWith(PROFILE_STORAGE_KEY_PREFIX)) return profileName;
+
+    const encodedValue = profileName.slice(PROFILE_STORAGE_KEY_PREFIX.length);
+
+    if(!IS_BASE64_PROFILE_NAME(encodedValue)) return profileName;
+
+    try {
+        const decoded = BASE64_DECODE_UNICODE(encodedValue);
+
+        if(`${PROFILE_STORAGE_KEY_PREFIX}${BASE64_ENCODE_UNICODE(decoded)}` === profileName) {
+            return decoded;
+        }
+    } catch (error) {}
+
+    return profileName;
+}
+
+function GET_HUMAN_READABLE_EXTERNAL_ENGINE_NAME(engineId) {
+    if(typeof engineId !== 'string' || !engineId) return '';
+
+    const engineItem = [...document.querySelectorAll('#external-engine-dropdown .dropdown-item')]
+        .find(item => item.dataset.value === engineId);
+    const header = engineItem?.querySelector(':scope > div');
+    const executableName = header?.querySelector('.engine-type-tag')?.textContent?.trim() || '';
+    const title = [...(header?.childNodes ?? [])]
+        .filter(node => node.nodeType === Node.TEXT_NODE)
+        .map(node => node.textContent)
+        .join(' ').trim().replace(/\s+/g, ' ');
+
+    if(!title) return executableName;
+
+    const normalizeName = name => name.toLowerCase().replace(/\.(exe|com|bat|cmd)$/i, '').replace(/[^a-z\d]/g, '');
+    return normalizeName(title) === normalizeName(executableName)
+        ? title
+        : `${title} ${executableName}`.trim();
+}
+
+function GET_PROFILE_STORAGE_KEY(profileName) {
+    if(profileName === 'default') return 'default';
+    const rawName = String(GET_HUMAN_READABLE_PROFILE_NAME(profileName));
+    return `${PROFILE_STORAGE_KEY_PREFIX}${BASE64_ENCODE_UNICODE(rawName)}`;
+}
+
+async function MIGRATE_OUTDATED_PROFILE_KEYS() {
+    const gmConfigKey = USERSCRIPT_SHARED_VARS.gmConfigKey;
+    const config = await USERSCRIPT.getValue(gmConfigKey);
+    let hasChanges = false;
+
+    async function migrateProfiles(profilesObj) {
+        if(!profilesObj) return false;
+        let changed = false;
+
+        for(const key of Object.keys(profilesObj)) {
+            if(key !== 'default' && !key.startsWith(PROFILE_STORAGE_KEY_PREFIX)) {
+                const newKey = GET_PROFILE_STORAGE_KEY(key);
+                if(key !== newKey) {
+                    profilesObj[newKey] = profilesObj[key];
+                    delete profilesObj[key];
+                    changed = true;
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    if(config?.global?.profiles && await migrateProfiles(config.global.profiles)) hasChanges = true;
+
+    if(config?.instance) {
+        for(const inst of Object.values(config.instance)) {
+            if(inst?.profiles && await migrateProfiles(inst.profiles)) hasChanges = true;
+        }
+    }
+
+    if(hasChanges) await USERSCRIPT.setValue(gmConfigKey, config);
+    return hasChanges;
+}
+
+function INIT_NESTED_OBJECT(obj, keys) {
+    keys.reduce((acc, key) => {
+        if(!acc[key]) acc[key] = {};
+        return acc[key];
+    }, obj);
+}
+
+function GET_UNIQUE_ID() {
+    return ([1e7]+-1e3+4e3+-8e3+-1e11).replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+    )
+}
+
+function FIND_OPENING_BY_PGN(pgn) {
+    if(!pgn || !window?.OPENINGS) return null;
+
+    let bestMatch = null;
+
+    for(const opening of window.OPENINGS) {
+        if(
+            pgn.startsWith(opening.pgn) &&
+            (!bestMatch || opening.pgn.length > bestMatch.pgn.length)
+        ) {
+            bestMatch = opening;
+        }
+    }
+
+    return bestMatch;
+}
+
+(async () => {
+    try {
+        const res = await fetch('./assets/openings/pgn.json');
+
+        if(!res.ok) {
+            window.OPENINGS = [];
+            return;
+        }
+
+        const data = await res.json();
+
+        window.OPENINGS =
+            Array.isArray(data)
+                ? data
+                : (data.openings || []);
+
+    } catch(e) {
+        window.OPENINGS = [];
+    }
+})();

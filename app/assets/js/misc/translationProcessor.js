@@ -1,0 +1,211 @@
+(function(){
+	let storageLanguageKey = 'selectedLanguage';
+	let currentLang = 'us';
+	let domTranslations = {};
+	let configTranslations = {};
+	let contributors = [];
+	let availableLanguages = [];
+	let firstLoad = true;
+	let triedToLoadAgain = false;
+	let isSecondaryPage = window?.isAcasSecondaryPage;
+
+	let mutationCounter = 0;
+
+	setInterval(() => {
+		mutationCounter = 0;
+	}, 1000);
+
+	function getFlagPath(languageCode) {
+		// An optional third metadata field lets multiple languages share a country flag.
+		const flagCode = availableLanguages.find(x => x[0] === languageCode)?.[2] ?? languageCode;
+		return `../assets/images/flags/${flagCode}.svg`;
+	}
+
+	function updateWhisperFontEligibility() {
+		const supportsWhisper = text => /^[\p{Script_Extensions=Latin}\p{M}\p{N}\p{P}\p{Z}\s]*$/u.test(text);
+		['#no-instances-subtitle', '#acas-logo-secondary']
+			.flatMap(selector => [...document.querySelectorAll(selector)])
+			.forEach(element => {
+				element.classList.toggle('has-whisper-font', supportsWhisper(element.textContent));
+		});
+	}
+	document.addEventListener('acas-translations-updated', () => queueMicrotask(updateWhisperFontEligibility));
+
+	function initializeLanguageDropdown(dropdownElem) {
+		// Avoid re-attaching event listeners
+		if (dropdownElem.dataset.initialized) return;
+		dropdownElem.dataset.initialized = "true";
+	
+		// Fill dropdown with available languages
+		const listContainer = dropdownElem.querySelector('.dropdown-list-container');
+		const selectedFlagImg = listContainer.parentElement.querySelector('img');
+
+		selectedFlagImg.src = getFlagPath(currentLang);
+
+		if (listContainer) {
+			availableLanguages.forEach(x => {
+				const languageCode = x[0];
+				const languageSearchTerm = x[1];
+				const svgPath = getFlagPath(languageCode);
+
+				const dropdownItem = document.createElement('div');
+				dropdownItem.classList.add('dropdown-item');
+				dropdownItem.dataset.value = languageSearchTerm;
+				dropdownItem.title = languageSearchTerm + ` (${languageCode})`;
+				dropdownItem.innerHTML = `<img>`;
+		
+				dropdownItem.querySelector('img').src = svgPath;
+		
+				listContainer.appendChild(dropdownItem);
+
+				dropdownItem.onclick = function() {
+					localStorage.setItem(storageLanguageKey, languageCode);
+
+					selectedFlagImg.src = svgPath;
+
+					load(languageCode, true);
+				};
+			});
+		}
+	}
+
+	async function load(lang, userActivated){
+		try {
+			const additionalPrefix = isSecondaryPage ? '../' : '';
+
+			const response = await fetch(additionalPrefix + `../assets/i18n/${lang}.json`);
+			const translationObj = await response.json();
+
+			const metaResponse = await fetch(additionalPrefix + `../assets/i18n/meta.json`);
+			const metaObj = await metaResponse.json();
+			const availableLanguagesArr = metaObj.availableLanguages;
+
+			FULL_TRANS_OBJ = translationObj; // set global variable on acas-globals.js so that other files can access translations
+			domTranslations = translationObj.domTranslations;
+			configTranslations = translationObj.configTranslations;
+			TRANS_OBJ = translationObj.translations; // set global variable on acas-globals.js so that other files can access translations
+			contributors = translationObj.contributors;
+			currentLang = lang;
+
+			availableLanguages = availableLanguagesArr;
+
+			if(userActivated) {
+				const msg = TRANS_OBJ.thankYouTranslator ?? 'Thanks to the translators';
+			
+				toast.message(msg + ' 🥰' + `\n(${contributors.length ? contributors.join(', ') : 'ChatGPT'})`, 5000);
+			}
+
+			updateTextContent();
+			translateConfig();
+			updateWhisperFontEligibility();
+			document.dispatchEvent(new Event('acas-translations-updated'));
+
+			if(firstLoad) {
+				let retranslateTimeout = null;
+
+				// updateTextContent() writes innerText, which is itself a childList mutation,
+				// so this observer re-triggers itself. The counter alone still allowed 25 full
+				// document sweeps per second, and Chessground mutates the DOM on every board
+				// update. Coalesce the bursts into one pass instead.
+				const observer = new MutationObserver(() => {
+					if(retranslateTimeout !== null) return;
+
+					retranslateTimeout = setTimeout(() => {
+						retranslateTimeout = null;
+
+						if(mutationCounter < 25) {
+							updateTextContent();
+							mutationCounter++;
+						}
+
+						document.querySelectorAll('.language-dropdown-input')
+							.forEach(initializeLanguageDropdown);
+					}, 100);
+				});
+
+				observer.observe(document, { childList: true, subtree: true });
+			}
+		} catch(error){
+			console.error(`Error while loading language file for ${lang}:`, error);
+
+			if(!triedToLoadAgain) {
+				triedToLoadAgain = true;
+				currentLang = 'us';
+				localStorage.setItem(storageLanguageKey, currentLang);
+
+				await load(currentLang);
+			}
+		}
+
+		firstLoad = false;
+	}
+
+	function translateConfig() {
+		Object.keys(configTranslations).map(async key => {
+			// The default timeout is ~2.8 hours, so every key without a matching element
+			// left a 100ms poll running for the rest of the session
+			const parentElement = await WAIT_FOR_ELEMENT(`[data-key="${key}"]`, 10000);
+			const customInputElem = parentElement?.closest('.custom-input');
+
+			if(!customInputElem) return;
+
+			const titleElement = customInputElem.querySelector('.input-title');
+			const subtitleElement = customInputElem.querySelector('.input-subtitle');
+
+			const [titleText, subtitleText] = configTranslations[key];
+
+			if(titleElement && titleText) {
+				titleElement.dir = FULL_TRANS_OBJ?.textDirection ?? 'auto';
+				titleElement.innerText = titleText;
+			}
+
+			if(subtitleElement && subtitleText) {
+				subtitleElement.dir = FULL_TRANS_OBJ?.textDirection ?? 'auto';
+				subtitleElement.innerText = subtitleText;
+			}
+		});
+	}
+
+	function comparisonFormat(text) {
+		return text
+			.toLowerCase()
+			.replaceAll(' ', '')
+			.replaceAll('\n', '');
+	}
+
+	function updateTextContent() {
+		Object.keys(domTranslations).forEach(query => {
+			const elemArr = [...document.querySelectorAll(query)];
+
+			if(elemArr?.length) {
+				const translation = domTranslations[query];
+
+				elemArr
+					.filter(x => comparisonFormat(x.innerText) !== comparisonFormat(translation))
+					.forEach(x => {
+						console.warn('Translated:', x.innerText, '-->',  translation);
+
+						x.dir = FULL_TRANS_OBJ?.textDirection ?? 'auto';
+						x.innerText = translation;
+					});
+			}
+		});
+	}
+
+	const savedLanguage = localStorage.getItem(storageLanguageKey) || currentLang;
+
+	window.ACAS_LOADING?.setStage(12, 'translations');
+	load(savedLanguage).then(() => {
+		const fontsReady = document.fonts?.ready ?? Promise.resolve();
+		fontsReady.then(() => {
+			window.ACAS_LOADING?.setStage(85, 'translations');
+			window.ACAS_LOADING?.markReady('translations');
+		}, error => {
+			console.error('Failed while waiting for translated fonts:', error);
+			window.ACAS_LOADING?.markReady('translations');
+		});
+	}, error => {
+		console.error(`Initial language setup failed for ${savedLanguage}:`, error);
+		window.ACAS_LOADING?.markReady('translations');
+	});
+})();

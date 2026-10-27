@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Thanh Bình</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  /* A.C.A.S-MOD: the Floating Panel's own window. The parent page draws
+     its panel canvas here (see pip.js syncAnalysisWindow). The canvas
+     always fills the whole window, so resizing the window fills it
+     completely instead of leaving a black strip. */
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  #acas-analysis-canvas { display: block; width: 100vw; height: 100vh; background: #000; }
+</style>
+</head>
+<body>
+<canvas id="acas-analysis-canvas"></canvas>
+<script>
+  // Tell the parent A.C.A.S page this real document is ready, so it can
+  // grab this canvas. This is the reliable signal: a load listener added
+  // by the parent before the navigation can be lost when the document
+  // is replaced, and the initial about:blank document already reports
+  // readyState "complete" — grabbing then is what made the window black.
+  function notifyOpener() {
+    try {
+      if(window.opener && typeof window.opener.__acasAnalysisWindowReady === 'function')
+        window.opener.__acasAnalysisWindowReady();
+    } catch(e) {}
+  }
+  if(document.readyState === 'complete' || document.readyState === 'interactive') notifyOpener();
+  else window.addEventListener('load', notifyOpener);
+  // CSS above already stretches the last drawn frame while the window is
+  // being dragged. The parent page also listens for this window's resize
+  // event and redraws at the new size, so no script is needed here.
+  window.addEventListener('resize', () => {
+    const canvas = document.getElementById('acas-analysis-canvas');
+    if(canvas) { canvas.style.width = '100vw'; canvas.style.height = '100vh'; }
+  });
+</script>
+</body>
+</html>
