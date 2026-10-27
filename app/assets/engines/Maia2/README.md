@@ -1,1 +1,0 @@
-Credits to https://github.com/csslab/maia-platform-frontend
