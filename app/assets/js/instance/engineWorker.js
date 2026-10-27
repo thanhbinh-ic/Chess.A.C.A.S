@@ -1,26 +1,10 @@
-const stockfishEngines = new Set([
-    'stockfish-19', 'stockfish-19-lite-single', 'stockfish-18-single',
-    'stockfish-18-lite-single', 'stockfish-17-single', 'stockfish-17-lite-single',
-    'stockfish-11', 'stockfish-8'
-]);
-
 const wrappedEngines = {
-    'stockfish-16-1-wasm': { path: 'lila-stockfish/16-0-worker', commandMethod: 'uci' },
     'fairy-stockfish-nnue-wasm': { path: 'fairy-stockfish-nnue.wasm/stockfishWorker', commandMethod: 'postMessage', module: false },
-    'lc0': { path: 'zerofish/zerofishWorker', commandMethod: 'zero' },
-    'acas-fusion': { path: 'Fusion/fusionWorker', commandMethod: 'uci' },
     'maia3': { path: 'Maia3/acasWorker', commandMethod: 'uci', poll: false },
-    'gaia-4-4-2': { path: 'Gaia/gaiaWorker', commandMethod: 'uci' },
-    'maia2': { path: 'Maia2/worker', commandMethod: 'uci' }
+    'gaia-4-4-2': { path: 'Gaia/gaiaWorker', commandMethod: 'uci' }
 };
 
 export function getEngineWorkerConfig(engineName) {
-    if(stockfishEngines.has(engineName)) {
-        return { path: `${engineName}/${engineName}`, readiness: 'message' };
-    }
-    if(engineName === 'lozza-5' || engineName === 'lozza-9') {
-        return { path: `Lozza/${engineName}`, readiness: 'immediate' };
-    }
     const wrapped = Object.hasOwn(wrappedEngines, engineName) ? wrappedEngines[engineName] : wrappedEngines.maia3;
     return { readiness: 'flag', module: true, poll: true, ...wrapped };
 }

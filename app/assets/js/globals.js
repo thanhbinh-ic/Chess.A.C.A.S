@@ -5,10 +5,7 @@ const USERSCRIPT_SHARED_VARS = {
 };
 
 const ENGINES_REQUIRING_SAB = [ // Requiring SharedArrayBuffer
-    'stockfish-16-1-wasm', 
-    'stockfish-14-nnue',
-    'fairy-stockfish-nnue-wasm',
-    'lc0'
+    'fairy-stockfish-nnue-wasm'
 ];
 
 const PROFILE_STORAGE_KEY_PREFIX = '__B64__';
