@@ -426,7 +426,7 @@ async function SEND_WEBHOOK(data = {}) {
             username: 'A.C.A.S',
             avatar_url:
                 webhookAvatar ||
-                `${location.origin}/A.C.A.S-MOD/assets/images/logo-192.png`,
+                `${location.origin}/assets/images/logo-192.png`,
             embeds: [embed]
         })
     );

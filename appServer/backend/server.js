@@ -14,9 +14,11 @@ const store = new Store();
 const ALLOWED_ORIGIN = [
     'http://localhost',
     'https://psyyke.github.io',
-    // A.C.A.S-MOD: fork hosted on the user's GitHub Pages. Without this,
-    // the server rejects every WebSocket upgrade from the fork GUI with
-    // "Blocked unauthorized origin: https://thanhbinh-ic.github.io".
+    // Chess.A.C.A.S: fork GUI is now hosted on Vercel. Without this,
+    // the server rejects every WebSocket upgrade from the Vercel GUI with
+    // "Blocked unauthorized origin: https://chessacas.vercel.app".
+    'https://chessacas.vercel.app',
+    // Kept for transition: the old GitHub Pages fork.
     'https://thanhbinh-ic.github.io'
 ];
 

@@ -2,7 +2,7 @@
  - Version: 1.1
  - Author: Haka
  - Description: A.C.A.S component
- - GitHub: https://github.com/thanhbinh-ic/A.C.A.S-MOD/
+ - GitHub: https://github.com/thanhbinh-ic/Chess.A.C.A.S/
 */
 
 class AutomaticMove {

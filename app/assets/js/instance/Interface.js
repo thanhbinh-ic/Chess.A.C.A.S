@@ -496,7 +496,7 @@ export default class Interface {
                 '%c[ NEW FEN RECEIVED! ]', 'color: neon; font-weight: bold; font-size: 50px;'
             );
             console.warn(
-                '[Logical Change Detection] New board FEN received:', `${origin}/A.C.A.S-MOD/board/?fens=${fensString}&o=${this.AcasInstance.lastOrientation}`,
+                '[Logical Change Detection] New board FEN received:', `${origin}/board/?fens=${fensString}&o=${this.AcasInstance.lastOrientation}`,
                 { fen, currentStateObj }
             );
         }

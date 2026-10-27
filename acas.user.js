@@ -39,9 +39,9 @@
 // @description:vi     Nâng cao hiệu suất cờ vua của bạn với hệ thống phân tích nước đi và hỗ trợ chiến thuật hiện đại
 // @description:uk     Покращуйте свою шахову гру з використанням передової системи аналізу ходів в режимі реального часу та стратегічної підтримки
 // @description:ru     Слава Украине
-// @homepageURL https://thanhbinh-ic.github.io/A.C.A.S-MOD
-// @supportURL  https://github.com/thanhbinh-ic/A.C.A.S-MOD/tree/main#why-doesnt-it-work
-// @match       https://thanhbinh-ic.github.io/A.C.A.S-MOD/*
+// @homepageURL https://chessacas.vercel.app
+// @supportURL  https://github.com/thanhbinh-ic/Chess.A.C.A.S/tree/main#why-doesnt-it-work
+// @match       https://chessacas.vercel.app/*
 // @match       http://localhost/*
 // @match       https://www.chess.com/*
 // @match       https://lichess.org/*
@@ -79,9 +79,9 @@
 // @require     https://update.greasyfork.org/scripts/470418/CommLinkjs.js?acasv=2
 // @require     https://update.greasyfork.org/scripts/470417/UniversalBoardDrawerjs.js?acasv=2
 // @require     https://update.greasyfork.org/scripts/591079/1919285/AutomaticMove.js
-// @icon        https://raw.githubusercontent.com/thanhbinh-ic/A.C.A.S-MOD/main/assets/images/logo-192.png
-// @version     2.5.5-fork
-// @note        Local window-fix build: analysis opens in a normal popup window (NOT Picture-in-Picture), so YouTube video PiP keeps its single PiP slot. Do not re-add @updateURL or GreasyFork will overwrite this fix. Backend switched to the user fork thanhbinh-ic/A.C.A.S-MOD (patched Floating Panel). 2.5.5: move arrows are built before old ones are cleared, failed draws retry and are restored on focus, so a packet arriving while clicking another window can no longer lose the arrows until the next move.
+// @icon        https://raw.githubusercontent.com/thanhbinh-ic/Chess.A.C.A.S/main/assets/images/logo-192.png
+// @version     2.5.6-vercel
+// @note        Local window-fix build: analysis opens in a normal popup window (NOT Picture-in-Picture), so YouTube video PiP keeps its single PiP slot. Do not re-add @updateURL or GreasyFork will overwrite this fix. Backend switched to Vercel https://chessacas.vercel.app (repo thanhbinh-ic/Chess.A.C.A.S, patched Floating Panel). 2.5.5: move arrows are built before old ones are cleared, failed draws retry and are restored on focus, so a packet arriving while clicking another window can no longer lose the arrows until the next move.
 // @namespace   HKR
 // @author      HKR
 // @license     GPL-3.0
@@ -361,8 +361,8 @@ Code below this point runs on any site, including the GUI.
 */
 
 const backendConfig = {
-    'hosts': { 'prod': 'thanhbinh-ic.github.io', 'dev': 'localhost' },
-    'path': '/A.C.A.S-MOD/'
+    'hosts': { 'prod': 'chessacas.vercel.app', 'dev': 'localhost' },
+    'path': '/'
 };
 
 const currentBackendUrlKey = 'currentBackendURL';
@@ -405,7 +405,7 @@ const debugModeActivated = false;
 const onlyUseDevelopmentBackend = false;
 
 const domain = window.location.hostname.replace('www.', '');
-const greasyforkURL = 'https://github.com/thanhbinh-ic/A.C.A.S-MOD';
+const greasyforkURL = 'https://github.com/thanhbinh-ic/Chess.A.C.A.S';
 
 function prependProtocolWhenNeeded(url) {
     if(!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -4239,7 +4239,7 @@ addSupportedChessSite('app.edchess.io', {
 });
 
 addSupportedChessSite([
-    backendConfig?.hosts?.prod || 'thanhbinh-ic.github.io',
+    backendConfig?.hosts?.prod || 'chessacas.vercel.app',
     backendConfig?.hosts?.dev || 'localhost'
 ], {
     'boardElem': obj => {
@@ -4523,7 +4523,7 @@ function initializeIfSiteReady() {
 }
 
 if(typeof GM_registerMenuCommand === 'function') {
-    GM_registerMenuCommand('[u] Open A.C.A.S-MOD Repo', e => {
+    GM_registerMenuCommand('[u] Open Chess.A.C.A.S Repo', e => {
         GM_openInTab(greasyforkURL, true);
     }, 'u');
 
@@ -4587,7 +4587,7 @@ setInterval(refreshSettings, 2500);
 //////////////////////////////////////////////////////////////////
 
 Thank you for reading through this userscript! Please visit GitHub
-Contributions are absolutely welcome >> github.com/thanhbinh-ic/A.C.A.S-MOD!
+Contributions are absolutely welcome >> github.com/thanhbinh-ic/Chess.A.C.A.S!
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////

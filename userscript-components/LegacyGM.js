@@ -2,7 +2,7 @@
  - Version: 1.0.3
  - Author: Haka
  - Description: A userscript library for adding support back to GM_ non async functions
- - GitHub: https://github.com/thanhbinh-ic/A.C.A.S-MOD/
+ - GitHub: https://github.com/thanhbinh-ic/Chess.A.C.A.S/
 */
 
 async function LOAD_LEGACY_GM_SUPPORT() {
