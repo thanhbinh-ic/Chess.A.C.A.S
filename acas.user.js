@@ -80,8 +80,8 @@
 // @require     https://update.greasyfork.org/scripts/470417/UniversalBoardDrawerjs.js?acasv=2
 // @require     https://update.greasyfork.org/scripts/591079/1919285/AutomaticMove.js
 // @icon        https://raw.githubusercontent.com/thanhbinh-ic/Chess.A.C.A.S/main/assets/images/logo-192.png
-// @version     2.5.6-vercel
-// @note        Local window-fix build: analysis opens in a normal popup window (NOT Picture-in-Picture), so YouTube video PiP keeps its single PiP slot. Do not re-add @updateURL or GreasyFork will overwrite this fix. Backend switched to Vercel https://chessacas.vercel.app (repo thanhbinh-ic/Chess.A.C.A.S, patched Floating Panel). 2.5.5: move arrows are built before old ones are cleared, failed draws retry and are restored on focus, so a packet arriving while clicking another window can no longer lose the arrows until the next move.
+// @version     2.5.7-direct-app
+// @note        Local window-fix build: analysis opens in a normal popup window (NOT Picture-in-Picture), so YouTube video PiP keeps its single PiP slot. Do not re-add @updateURL or GreasyFork will overwrite this fix. Backend switched to Vercel https://chessacas.vercel.app (repo thanhbinh-ic/Chess.A.C.A.S, patched Floating Panel). 2.5.5: move arrows are built before old ones are cleared, failed draws retry and are restored on focus, so a packet arriving while clicking another window can no longer lose the arrows until the next move. 2.5.7: new 'Open App Directly' setting (Miscellaneous panel in the app) - when ON, a detected game opens the app page (/app/) directly instead of the landing page.
 // @namespace   HKR
 // @author      HKR
 // @license     GPL-3.0
@@ -429,6 +429,28 @@ function getCurrentBackendURL(skipGmStorage) {
     return prependProtocolWhenNeeded(gmStorageUrl);
 }
 
+// Chess.A.C.A.S: Open App Directly (Miscellaneous panel in the app, global
+// setting, default OFF). When ON, a detected game opens the app page
+// directly instead of the landing page. Read fresh on every open, so a
+// toggle changed in the app tab applies to the next game without reload.
+// getCurrentBackendURL() is kept as-is for backend detection / CommLink:
+// it must stay the stored backend base, only the URL we *open* changes.
+function isOpenAppDirectly() {
+    try {
+        const cfg = GM_getValue(dbValues.AcasConfig);
+        return !!cfg?.global?.[configKeys.openAppDirectly];
+    } catch(e) {
+        return false;
+    }
+}
+
+function getBackendOpenURL() {
+    const base = getCurrentBackendURL();
+    if(!isOpenAppDirectly()) return base;
+    const withSlash = base.endsWith('/') ? base : base + '/';
+    return withSlash + 'app/';
+}
+
 if(!isBackendUrlUpToDate) {
     GM_setValue(currentBackendUrlKey, getCurrentBackendURL(true));
 }
@@ -644,7 +666,7 @@ const configKeys = Object.freeze([
     'renderPieceEnemyCapture', 'renderOnExternalSite', 'feedbackOnExternalSite',
     'enableMoveRatings', 'enableEnemyFeedback', 'feedbackEngineDepth',
     'enableAdvancedElo', 'moveAsFilledSquares',
-    'movesOnDemand', 'onlySuggestPieces', 'isUserscriptGhost'
+    'movesOnDemand', 'onlySuggestPieces', 'isUserscriptGhost', 'openAppDirectly'
 ].reduce((o, k) => (o[k] = k, o), {}));
 
 const config = {};
@@ -4432,7 +4454,7 @@ function isAcasAnalysisWindowOpen() {
 }
 
 function openAcasAnalysisWindow() {
-    const url = getCurrentBackendURL();
+    const url = getBackendOpenURL();
 
     // Already open: never open a duplicate, just bring the existing one up.
     // Reusing the named window also reuses it across a page reload, when
@@ -4495,7 +4517,7 @@ function startWhenBackendReady() {
             const config = GM_getValue(dbValues.AcasConfig);
             const isGhost = config?.global?.[configKeys.isUserscriptGhost];
 
-            if(!isGhost) GM_openInTab(getCurrentBackendURL(), true);
+            if(!isGhost) GM_openInTab(getBackendOpenURL(), true);
         }
     }, 100);
 }
@@ -4528,7 +4550,7 @@ if(typeof GM_registerMenuCommand === 'function') {
     }, 'u');
 
     GM_registerMenuCommand('[o] Open GUI Manually', e => {
-        GM_openInTab(getCurrentBackendURL(), true);
+        GM_openInTab(getBackendOpenURL(), true);
     }, 'o');
 
     GM_registerMenuCommand('[w] Open Analysis in New Window (keeps YouTube PiP)', e => {
