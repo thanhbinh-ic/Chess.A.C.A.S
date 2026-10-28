@@ -15,7 +15,7 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 | [▶️ Open A.C.A.S](https://chessacas.vercel.app/) | [⬇️ Install (Script)](https://chessacas.vercel.app/acas.user.js)  | [💬 Discuss With Community](https://github.com/thanhbinh-ic/Chess.A.C.A.S/issues)
 |-------|-------|-------|
 
-* 3 built-in WebAssembly engines: Gaia 4.4.2, Maia 3, Fairy Stockfish 14 (see below)
+* 4 built-in WebAssembly engines: Gaia 4.4.2, Berserk, Maia 3, Fairy Stockfish 14 (see below)
 * External engines (via an installable localhost server)
 * Supports top chess sites (chess.com, lichess.org, etc.)
 * Multiple suggestions, arrows, variants, fonts
@@ -37,10 +37,11 @@ A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**
 This fork is based on [Psyyke/A.C.A.S](https://github.com/Psyyke/A.C.A.S). The changes below are what this fork actually ships, not upstream features:
 
 * **Hosted on Vercel, not GitHub Pages.** The GUI lives at [![Vercel App](https://img.shields.io/badge/LIVE_DEMO-VERCEL_APP-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://chessacas.vercel.app/), served from the repo root, so there is no `/A.C.A.S/` URL prefix and no hard-coded upstream host path. The userscript backend was switched to this host; a stored old backend URL is auto-reset on first run.
-* **Built-in engines trimmed from ~809 MB to ~154 MB.** Removed Stockfish, Lc0/Zerofish, Maia 2, Lozza, Fusion and the other bundled engines. Only three remain: **Gaia 4.4.2, Maia 3 and Fairy Stockfish 14** (plus the shared `chessjs` / `onnxruntime-web` libraries Maia 3 needs).
+* **Built-in engines trimmed, then Berserk added.** The original ~809 MB bundle was first trimmed to ~154 MB (Gaia 4.4.2, Maia 3 and Fairy Stockfish 14 only, plus the shared `chessjs` / `onnxruntime-web` libraries Maia 3 needs). Adding Berserk's ~62 MB WASM brings the repo to ~216 MB with four built-in engines: **Gaia 4.4.2, Berserk, Maia 3 and Fairy Stockfish 14**.
 * **Gaia 4.4.2 with a real NNUE.** Gaia runs with its NNUE network (`net.bin.deflate`, split into chunks for GitHub's file-size limit) and 3+4-piece tablebases, instead of falling back to the PeSTO evaluation. A dedicated ACAS worker adapter (`Gaia/gaiaWorker.js`) translates between ACAS and Gaia's UCI protocol.
+* **Berserk as a browser WASM engine.** Berserk, a top-10 CCRL Blitz engine, ships as a wasm-bindgen build (`Berserk/berserk.js` + `berserk_bg.wasm`, ~62 MB) with its NNUE network embedded, so no separate network file is needed. A dedicated ACAS worker adapter (`Berserk/berserkWorker.js`) translates ACAS's UCI protocol to the engine's method API. Limits of this build, verified in testing: it runs single-threaded only (Threads is clamped to 1; Threads > 1 hangs), it has no stop control, so ACAS search depth is capped at 20 in the worker (a lower depth, node limit or movetime from ACAS is respected exactly), and it does not need SharedArrayBuffer.
 * **Fairy Stockfish fixed for any host.** Upstream `stockfish.js` hard-coded `_scriptDir` to `/A.C.A.S/...`, so Fairy 404'd on every fork. It is now a relative `./stockfish.js`, so the WASM and pthread worker load from the worker's own folder on Vercel, GitHub Pages or localhost.
-* **Floating Panel no longer uses Picture-in-Picture.** The suggestion panel opens in a normal popup window (`acas-floating-panel`), so it no longer steals the browser's single PiP slot (YouTube PiP keeps working). Added a Floating Panel Type setting (`window` / `pip`), a single floating window, auto-close when the app tab closes, and the Hidden settings panel is always shown.
+* **Floating Panel defaults to Picture-in-Picture again.** The Floating Panel Type setting (`pip` / `window`) now defaults to `pip`, the original Picture-in-Picture behaviour, which takes the browser's single PiP slot. The `window` mode is still available: the suggestion panel opens in a normal popup window (`acas-floating-panel`) that does not steal the PiP slot, so YouTube PiP keeps working. A single floating window, auto-close when the app tab closes, and the Hidden settings panel is always shown. Note: a profile that already saved `window` keeps that choice; the new default only applies where no choice is saved yet.
 * **Open App Directly.** A toggle in the app's Miscellaneous panel (next to Ghost Script), off by default. When ON, a detected game opens the app page (`/app/`) directly instead of the landing page — no extra click on "Open A.C.A.S". The same toggle also applies to "Open GUI Manually" and the analysis window. It is a global setting, saved like Ghost Script, and read fresh by the userscript on every open, so it applies to the next game without reloading the userscript.
 * **Move arrows no longer disappear.** Arrows are built before the old ones are cleared, with retries and a redraw on focus, so a packet arriving while another window is clicked can no longer lose the arrows until the next move.
 * **Local server accepts the Vercel origin.** `appServer/backend/server.js` allows `Vercel hosts` (the old GitHub Pages origin is kept during the transition), so external engines still work from the Vercel GUI over `ws://localhost:2800`. The Hidden panel's ghost-mode and auto-move options are unchanged upstream features; this fork only makes that panel always available.
@@ -53,6 +54,7 @@ This fork is based on [Psyyke/A.C.A.S](https://github.com/Psyyke/A.C.A.S). The c
 |--------|------------|---------|
 | [Fairy Stockfish WASM](https://github.com/fairy-stockfish/fairy-stockfish.wasm) | Chess engine (variants) | GPL-3.0 |
 | [GaiaChess](https://github.com/jromang/gaiachess) | Built-in UCI engine with NNUE (Gaia 4.4.2) | GPL-3.0 |
+| [Berserk](https://github.com/jhonnold/berserk) | Built-in engine with embedded NNUE (wasm-bindgen build) | GPL-3.0 |
 | [Maia-Chess](https://github.com/CSSLab/maia-chess) | Human-like NN weights (Maia 3) | GPL-3.0 |
 | [COI-Serviceworker](https://github.com/gzuidhof/coi-serviceworker) | Enables SharedArrayBuffer / WASM on static hosting (Vercel) | MIT |
 | [ChessgroundX](https://github.com/gbtami/chessgroundx) | Chessboard UI (modified) | GPL-3.0 |

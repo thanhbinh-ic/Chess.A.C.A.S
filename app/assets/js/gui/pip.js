@@ -103,7 +103,7 @@ let pipRetryArmed = false;
 
 // A.C.A.S-MOD (Floating Panel Type, 26/10/2026): two modes, chosen in
 // Floating Panel Settings > Regular settings > Floating Panel Type
-// (data-key="pipMode", default "window"):
+// (data-key="pipMode", default "pip" since 29/10/2026):
 //   "window" — the current behaviour: a separate about:blank window
 //     titled "Thanh Bình". It is NOT a PiP window, so it never takes
 //     the browser's single PiP slot and YouTube PiP keeps working.
@@ -114,7 +114,9 @@ let pipRetryArmed = false;
 export function getFloatingPanelMode() {
     const el = pipModeInput || document.querySelector('input[data-key="pipMode"]');
     const value = el?.value;
-    return value === 'pip' ? 'pip' : 'window';
+    // Default is "pip" (changed 29/10/2026); an explicitly stored
+    // "window" still wins, an empty/unknown value falls back to "pip".
+    return value === 'window' ? 'window' : 'pip';
 }
 
 export async function closeFloatingPanel() {
@@ -967,8 +969,9 @@ async function refreshPipView() {
 export async function startPictureInPicture() {
     // Legacy name kept so gui.js / settingChangeObserver.js need no import
     // change. Behaviour now branches on Floating Panel Type (see
-    // getFloatingPanelMode above): "window" is the A.C.A.S-MOD default,
-    // "pip" restores the original Picture-in-Picture behaviour.
+    // getFloatingPanelMode above): "pip" is the default (since
+    // 29/10/2026) and restores the original Picture-in-Picture
+    // behaviour; "window" is the opt-in popup mode.
     const mode = getFloatingPanelMode();
 
     const video = document.createElement('video');
@@ -1024,7 +1027,7 @@ export async function startPictureInPicture() {
         return;
     }
 
-    // Window path (default, A.C.A.S-MOD): this NO LONGER requests a
+    // Window path (opt-in; it was the default until 29/10/2026): this NO LONGER requests a
     // PiP window and never touches the browser's single PiP slot, so
     // YouTube video PiP keeps working at the same time. If a PiP
     // window is still open from a previous PiP-mode session, exit it.
