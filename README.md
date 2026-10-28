@@ -1,6 +1,6 @@
 <img width="2000" height="500" alt="largehero" src="assets/images/largehero.png" />
 
-# **Chess.A.C.A.S** — A.C.A.S (Advanced Chess Assistance System)
+# **Chess.A.C.A.S** (Advanced Chess Assistance System)
 
 > [!WARNING]
 > **Chess.A.C.A.S** is a fork of [A.C.A.S (Advanced Chess Assistance System)](https://github.com/Psyyke/A.C.A.S). It was **not written from scratch**: it is based on the original open-source chess assistant, released under the GPL v3 license. Credit for the original work belongs to its upstream authors; this fork only adds the changes listed in "What this fork changes vs. the original" below.
