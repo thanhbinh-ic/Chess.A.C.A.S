@@ -1,9 +1,9 @@
 <img width="2000" height="500" alt="largehero" src="assets/images/largehero.png" />
 
-# A.C.A.S (Advanced Chess Assistance System)
+# **Chess.A.C.A.S** — A.C.A.S (Advanced Chess Assistance System)
 
 > [!WARNING]
-> This is a fork of [A.C.A.S](https://github.com/Psyyke/A.C.A.S). Chess.A.C.A.S was not written from scratch. It is based on A.C.A.S—an open-source Vietnamese input method editor created by [Hakorr](https://github.com/Hakorr) and released under the GPL v3 license.
+> **Chess.A.C.A.S** is a fork of [A.C.A.S (Advanced Chess Assistance System)](https://github.com/Psyyke/A.C.A.S). It was **not written from scratch**: it is based on the original open-source chess assistant, released under the GPL v3 license. Credit for the original work belongs to its upstream authors; this fork only adds the changes listed in "What this fork changes vs. the original" below.
 
 A.C.A.S (Advanced Chess Assistance System) is an open-source chess assistant (**not a chess cheat**), designed to help you make better moves using a chess engine. Just install the userscript, open the A.C.A.S GUI, and you're ready to go. No downloads necessary!
 
