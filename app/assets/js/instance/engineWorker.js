@@ -1,7 +1,8 @@
 const wrappedEngines = {
     'fairy-stockfish-nnue-wasm': { path: 'fairy-stockfish-nnue.wasm/stockfishWorker', commandMethod: 'postMessage', module: false },
     'maia3': { path: 'Maia3/acasWorker', commandMethod: 'uci', poll: false },
-    'gaia-4-4-2': { path: 'Gaia/gaiaWorker', commandMethod: 'uci' }
+    'gaia-4-4-2': { path: 'Gaia/gaiaWorker', commandMethod: 'uci' },
+    'berserk': { path: 'Berserk/berserkWorker', commandMethod: 'uci' }
 };
 
 export function getEngineWorkerConfig(engineName) {
