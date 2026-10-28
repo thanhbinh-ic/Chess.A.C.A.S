@@ -1055,7 +1055,7 @@ function handleAutoMove(markings) {
 
 const feedbackVisualRevisions = new Map();
 
-// A.C.A.S-MOD (arrow-loss fix, 25/10/2026): the old code cleared the old
+// Chess.A.C.A.S (arrow-loss fix, 25/10/2026): the old code cleared the old
 // arrows FIRST and then tried to draw the new ones. If the new draw failed
 // (e.g. the packet arrived exactly while the user clicked into another
 // window, the board element was mid-recreation, or BoardDrawer coordinates
@@ -4358,7 +4358,7 @@ async function start() {
             'ignoreBodyRectLeft': domain === 'app.edchess.io'
         });
 
-        // A.C.A.S-MOD: recreating the BoardDrawer (board element changed)
+        // Chess.A.C.A.S: recreating the BoardDrawer (board element changed)
         // removes its SVG and with it all arrows, with no new packet until
         // the next move. Restore the last move arrows for the same FEN.
         setTimeout(() => { try { restoreLastMoveMarkingsIfLost(); } catch(e) {} }, 100);
